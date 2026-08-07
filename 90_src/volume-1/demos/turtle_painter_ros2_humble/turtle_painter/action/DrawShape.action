@@ -1,0 +1,17 @@
+# Goal: describe one drawing task.
+string shape_name
+float32 size
+float32 start_x
+float32 start_y
+float32 speed
+---
+# Result: summarize completion or cancellation.
+bool success
+float32 total_time
+float32 position_error
+string message
+---
+# Feedback: report observable task progress.
+float32 progress
+uint32 current_segment
+float32 remaining_distance

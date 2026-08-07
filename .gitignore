@@ -1,0 +1,64 @@
+# Third-party reference archives that should remain local
+/110_data/reference-code-archives/d2l-ros2-master.zip
+
+# ROS / colcon / catkin build artifacts
+build/
+install/
+log/
+devel/
+.catkin_tools/
+
+# Python cache and local environments
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
+env/
+
+# ROS runtime data
+*.bag
+*.bag.active
+*.db3
+*.mcap
+rosbag2_*/
+.ros/
+
+# LaTeX temporary files
+*.aux
+*.bbl
+*.bcf
+*.blg
+*.fdb_latexmk
+*.fls
+*.lof
+*.log
+*.lot
+*.out
+*.run.xml
+*.synctex.gz
+*.toc
+*.xdv
+
+# Editors and operating-system metadata
+.vscode/
+.idea/
+*.code-workspace
+*~
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Temporary and backup files
+*.tmp
+*.temp
+*.bak
+*.orig
+*.rej

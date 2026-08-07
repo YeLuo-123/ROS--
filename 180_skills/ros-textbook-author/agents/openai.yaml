@@ -1,0 +1,4 @@
+interface:
+  display_name: "机器人操作系统教材编写助手"
+  short_description: "面向高校机器人操作系统与智能机器人开发系列教材的规划、编写、案例设计与质量审校"
+  default_prompt: "使用 $ros-textbook-author 规划或编写《机器人操作系统与智能机器人开发》系列教材。"

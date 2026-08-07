@@ -1,0 +1,26 @@
+turtle_goal_controller:
+  ros__parameters:
+    target_x: 9.5
+    target_y: 5.5
+    linear_gain: 1.0
+    angular_gain: 4.0
+    max_linear_speed: 2.0
+    max_angular_speed: 2.5
+    distance_tolerance: 0.05
+    heading_tolerance: 0.20
+    control_rate: 20.0
+
+safety_guard:
+  ros__parameters:
+    enabled: true
+    world_min: 0.0
+    world_max: 11.0
+    safe_margin: 1.0
+    warning_margin: 2.0
+    max_linear_speed: 2.0
+    max_angular_speed: 2.5
+    recovery_speed: 0.5
+    recovery_angular_gain: 3.0
+    recovery_heading_tolerance: 0.20
+    command_timeout: 0.5
+    control_rate: 20.0
