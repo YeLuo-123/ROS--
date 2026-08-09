@@ -1,0 +1,65 @@
+% !TeX program = xelatex
+% 章节：第8章 8.4节 行为树与复杂任务执行
+% 验证状态：依据本地Navigation2行为树XML和Action定义静态审查；运行待验证。
+\documentclass[UTF8,zihao=-4]{ctexart}
+\usepackage{amsmath,amssymb,booktabs,geometry,hyperref}
+\geometry{a4paper,left=28mm,right=28mm,top=25mm,bottom=25mm}
+\hypersetup{colorlinks=true,linkcolor=blue,citecolor=blue,urlcolor=blue}
+\title{第8章自主导航与任务执行\\\large 8.4 行为树与复杂任务执行}
+\author{}\date{}
+\begin{document}\maketitle
+
+\noindent\textbf{教学定位：}本节把行为树（Behavior Tree，BT）作为导航任务编排工具，而不是路径规划算法。学生需要理解控制节点如何决定执行顺序、条件节点如何读取系统状态、动作节点如何调用Nav2服务器，以及多目标任务怎样反馈、取消和失败退出。
+
+\section*{8.4 行为树与复杂任务执行}
+
+\subsection*{8.4.1 行为树基础：Sequence、Fallback与Condition}
+
+行为树由控制节点、条件节点和动作节点组成。执行器以一定频率从根节点开始tick，节点返回\texttt{SUCCESS}、\texttt{FAILURE}或\texttt{RUNNING}。\texttt{RUNNING}表示动作尚未结束，下一次tick仍需继续处理；它使长期导航任务能够在执行过程中响应取消、目标更新和故障。
+
+\begin{itemize}
+  \item \textbf{Sequence：}按从左到右的顺序执行子节点；任一子节点失败则返回失败，所有子节点成功才返回成功，适合表达“先规划，再跟踪”。
+  \item \textbf{Fallback：}依次尝试子节点；遇到成功即返回成功，所有子节点失败才返回失败，适合表达“首选方案失败后尝试替代方案”。
+  \item \textbf{Condition：}检查目标是否更新、路径是否有效或某类错误是否适合恢复，通常不执行持续动作。
+  \item \textbf{Action：}调用规划、控制、清图、旋转或等待等实际任务，可能连续多个tick返回\texttt{RUNNING}。
+\end{itemize}
+
+例如，“路径有效则跟踪，否则重新规划”可由条件、Fallback与动作组合表达。行为树的优势是把任务顺序、重试和恢复显式写出，便于局部替换；其代价是节点状态、黑板变量和控制节点语义必须一致。树看起来连通并不等于逻辑正确，错误的重试条件可能造成无限循环，错误的Fallback顺序可能掩盖真正故障。
+
+\subsection*{8.4.2 Nav2行为树XML结构与任务执行器}
+
+Nav2的\texttt{bt\_navigator}接收导航Action目标，加载XML行为树，并通过行为树节点调用\texttt{ComputePathToPose}、\texttt{FollowPath}、\texttt{ClearEntireCostmap}、\texttt{Spin}、\texttt{Wait}和\texttt{BackUp}等接口。黑板（blackboard）在节点间传递目标、路径、插件选择和错误码，不需要把所有中间量转化为外部Topic。BehaviorTree.CPP支持以子树复用任务逻辑，使导航、规划器恢复、控制器恢复和系统级恢复可以分层组织\cite{macenski2020nav2}。
+
+本地\texttt{navigate\_to\_pose\_w\_replanning\_and\_recovery.xml}体现了三层逻辑\cite{navigation2source}：
+\begin{enumerate}
+  \item \texttt{PipelineSequence}使周期性规划与路径跟踪形成流水线，默认树用\texttt{RateController}限制重规划频率；
+  \item 规划或控制的局部\texttt{RecoveryNode}先针对错误清除相应代价地图并重试；
+  \item 顶层恢复根据错误类型轮流尝试清图、旋转、等待和后退，同时允许新目标打断恢复。
+\end{enumerate}
+
+XML属性中的\texttt{planner\_id}、\texttt{controller\_id}、\texttt{goal\_checker\_id}等用于选择插件。修改树之前应先画出成功路径、失败路径和终止条件，再检查每个Action服务器是否存在。若XML能加载但任务立即失败，应检查端口名称和黑板变量；若XML加载失败，应检查文件路径、节点插件库和BehaviorTree.CPP格式版本。主分支XML标记\texttt{BTCPP\_format="4"}，Humble中的格式与可用节点需在目标系统复核。
+
+\subsection*{8.4.3 多目标点巡航：\texttt{NavigateThroughPoses}}
+
+\texttt{NavigateThroughPoses}接收按顺序排列的一组目标位姿，并让规划与控制围绕整个目标序列持续运行。每个位姿必须带有可变换到全局坐标系的时间戳和坐标系。反馈可包含当前位置、剩余距离、剩余目标数、恢复次数和航点状态；本地1.4.0源码还提供更细的状态字段，Humble接口应以\texttt{ros2 interface show}结果为准\cite{navigation2source}。
+
+多目标任务至少要规定三类策略：
+\begin{itemize}
+  \item \textbf{到达判定：}每个中间目标是否要求严格姿态，还是只需进入位置容差；
+  \item \textbf{失败策略：}某个目标不可达时停止整个任务、跳过该点，还是执行恢复后重试；
+  \item \textbf{任务反馈：}如何报告当前目标、已完成目标、剩余目标和取消状态。
+\end{itemize}
+
+\texttt{NavigateThroughPoses}与\texttt{waypoint\_follower}不能简单视为同一接口的两个名字。前者由BT Navigator围绕一组位姿规划和跟踪，适合连续的多位姿导航；后者按航点调用导航任务，并可在每个航点执行等待或其他任务插件。选择依据是任务语义，而不是目标点数量。
+
+取消多目标任务后，应确认当前导航Action结束、行为树不再发起新目标且底盘最终收到零速度。仅在界面上删除目标标记不能证明任务已取消。任务记录应包含目标序列、各点结果、恢复次数、取消时刻和最终速度状态。
+
+\subsection*{观察与诊断}
+
+建议先使用两个无遮挡目标验证目标顺序和反馈，再人为设置一个不可达目标观察失败策略。需要保存行为树XML、目标坐标系、Action反馈和错误码。当前Windows环境只完成XML与接口静态阅读，未执行Nav2行为树。
+
+\begin{thebibliography}{9}
+\bibitem{macenski2020nav2} Macenski, S., Martín, F., White, R., Clavero, J. \emph{The Marathon 2: A Navigation System}. IROS, 2020.
+\bibitem{navigation2source} Open Navigation LLC and contributors. \emph{Navigation2 source tree}: \texttt{nav2\_bt\_navigator}, \texttt{nav2\_behavior\_tree} and \texttt{nav2\_msgs/action}, local version 1.4.0, static inspection, 2026-08-09.
+\end{thebibliography}
+\end{document}

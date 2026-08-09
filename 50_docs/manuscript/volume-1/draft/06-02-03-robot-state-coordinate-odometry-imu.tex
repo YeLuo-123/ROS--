@@ -1,0 +1,437 @@
+% !TeX program = xelatex
+% 分册：第二册《应用篇：建模、感知、规划与控制》
+% 章节：第6章 6.2节机器人状态与坐标系、6.3节轮式里程计与IMU测量
+% 内容状态：理论初稿，已完成静态审查，尚未进行 LaTeX 编译和教学实物验证。
+% 指定参考：Zheng Fan et al., LiDAR, IMU, and camera fusion for SLAM, 2025.
+
+\documentclass[UTF8,zihao=-4]{ctexart}
+
+\usepackage{amsmath,amssymb,bm}
+\usepackage{booktabs}
+\usepackage{geometry}
+\usepackage{hyperref}
+\usepackage{siunitx}
+
+\geometry{a4paper,left=28mm,right=28mm,top=25mm,bottom=25mm}
+\hypersetup{colorlinks=true,linkcolor=blue,citecolor=blue,urlcolor=blue}
+\sisetup{per-mode=symbol}
+
+\newcommand{\vect}[1]{\bm{#1}}
+
+\title{第6章移动机器人的局部位姿估计\\
+\large 6.2 机器人状态与坐标系；6.3 轮式里程计与IMU测量}
+\author{}
+\date{}
+
+\begin{document}
+
+\maketitle
+
+\begin{table}[htbp]
+  \centering
+  \caption*{教学与编写信息}
+  \begin{tabular}{p{0.22\textwidth}p{0.68\textwidth}}
+    \toprule
+    项目 & 内容 \\
+    \midrule
+    所属教材 & 第二册《机器人操作系统与智能机器人开发——应用篇：建模、感知、规划与控制》 \\
+    章节位置 & 第6章“移动机器人的局部位姿估计”第6.2至6.3节 \\
+    建议对象 & 已学习平面刚体运动、坐标系、ROS消息与移动机器人基础的本科生或研究生 \\
+    建议学时 & 1学时理论讲解；传感器观察与数据辨析作为课内核心任务 \\
+    技术属性 & 共同概念；ROS接口观察以Ubuntu 22.04与ROS~2 Humble为主 \\
+    智能闭环作用 & 感知与反馈：把机器人运动和传感器输出组织成可用于控制、建图和导航的状态信息 \\
+    内容状态 & 理论初稿；静态审查完成，LaTeX编译与教学实物验证待完成 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\subsection*{学习目标}
+
+完成本节后，学生能够：
+\begin{enumerate}
+  \item \textbf{K（知识与理解）：}区分位姿、速度、传感器偏置等状态量，并说明状态向量取决于机器人任务和模型；
+  \item \textbf{A（分析与诊断）：}比较编码器与六轴、九轴IMU的测量对象、频率特点、优势与误差来源；
+  \item \textbf{T（工具与实现）：}根据ROS消息的时间戳、坐标系和字段判断数据表达的物理量，而不把话题数据直接等同于机器人真值；
+  \item \textbf{L（自主学习与迁移）：}使用“真值---测量---估计”框架阅读状态估计与多传感器融合资料。
+\end{enumerate}
+
+\subsection*{先修知识}
+
+\begin{itemize}
+  \item 第2章的坐标系、姿态和坐标变换基础；
+  \item 第4章的IMU、轮式里程计与仿真传感器基础；
+  \item 第5章的底盘执行、编码器反馈和控制周期；
+  \item 向量、函数、均值和方差的基本概念。
+\end{itemize}
+
+\subsection*{关键词}
+
+\begin{table}[htbp]
+  \centering
+  \caption*{本节关键词}
+  \begin{tabular}{lll}
+    \toprule
+    中文名称 & English term & 缩写或符号 \\
+    \midrule
+    状态 & state & $\vect{x}$ \\
+    位姿 & pose & --- \\
+    测量值 & measurement & $\vect{z}$ \\
+    估计值 & estimate & $\hat{\vect{x}}$ \\
+    真值 & ground truth & --- \\
+    惯性测量单元 & Inertial Measurement Unit & IMU \\
+    里程计 & odometry & odom \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\subsection*{问题情境与学习路径}
+
+机器人控制器可以读取四个编码器的计数，IMU可以连续输出角速度、线加速度，九轴设备还可输出磁场测量。这些数据都不是机器人局部位姿的真值：车轮可能打滑，IMU存在零偏，积分还会放大微小误差。若不先统一状态定义、\texttt{base\_link}与\texttt{odom}坐标关系，就无法正确组织后续融合输入。
+
+状态感知的核心问题不是“传感器有没有数据”，而是三个更具体的问题：系统需要估计哪些量；每个传感器实际测到了什么；怎样表达估计结果及其不确定性。本节按照“定义状态---认识测量---区分真值与估计”的顺序建立概念基础。扩展卡尔曼滤波和\texttt{robot\_localization}配置将在6.6与6.7节展开，SLAM前后端和地图优化留到第7章。
+
+\section*{6.2 机器人状态与坐标系}
+
+\subsection*{6.2.1 位姿、速度与运动状态}
+
+\subsubsection*{6.2.1.1 位姿}
+
+位姿（pose）描述机器人“在哪里、朝向哪里”，由位置和姿态共同组成。对于在平面内运动的麦克纳姆轮机器人，其位姿可表示为
+\begin{equation}
+  \vect{q}=
+  \begin{bmatrix}
+    x & y & \theta
+  \end{bmatrix}^{\mathrm T},
+  \label{eq:planar-pose}
+\end{equation}
+其中，$x$和$y$表示机器人参考点在给定世界坐标系中的位置，$\theta$表示航向角。位姿必须与参考坐标系一起解释；脱离\texttt{map}或\texttt{odom}等坐标系，只写“当前位置为$(x,y)$”并不完整。ROS移动平台的常用坐标关系由REP~105规定\cite{rep105}。
+
+\subsubsection*{6.2.1.2 速度}
+
+速度（velocity）描述机器人“正在怎样运动”，包括线速度和角速度。位姿相同的机器人可能具有完全不同的运动方向和快慢，因此仅有位姿不足以描述其瞬时运动。平面底盘在底盘坐标系中的速度可写为
+\begin{equation}
+  \vect{v}_B=
+  \begin{bmatrix}
+    v_x & v_y & \omega_z
+  \end{bmatrix}^{\mathrm T},
+  \label{eq:planar-twist}
+\end{equation}
+其中，$v_x$、$v_y$是底盘坐标系中的纵向与横向线速度，$\omega_z$是偏航角速度。根据REP~103的右手坐标约定，移动机器人通常取$x$轴向前、$y$轴向左、$z$轴向上，线速度使用\si{m/s}，角速度使用\si{rad/s}\cite{rep103}。
+
+与位姿一样，速度也必须指明参考坐标系。式\eqref{eq:planar-twist}中的$v_x$和$v_y$随底盘方向一起变化；若将速度表示在世界坐标系中，则需要根据航向角$\theta$进行坐标变换。
+
+\subsubsection*{6.2.1.3 运动状态}
+
+运动状态（motion state）是用于描述机器人当前运动并预测其后续变化的一组变量。对平面麦克纳姆轮机器人，最基本的运动状态由位姿和速度组成：
+\begin{equation}
+  \vect{x}_{m}=
+  \begin{bmatrix}
+    x & y & \theta & v_x & v_y & \omega_z
+  \end{bmatrix}^{\mathrm T}.
+  \label{eq:teaching-state}
+\end{equation}
+该状态同时回答机器人“在哪里”“朝向哪里”和“怎样运动”。状态向量不是传感器数据的简单拼接，而应根据任务目标和运动模型选取。
+
+在融合IMU等传感器时，还可以将持续影响测量的误差量加入估计状态。例如，包含IMU偏置的扩展状态可写为
+\begin{equation}
+  \vect{x}_{e}=
+  \begin{bmatrix}
+    x & y & \theta & v_x & v_y & \omega_z & b_{a_x} & b_{a_y} & b_{\omega_z}
+  \end{bmatrix}^{\mathrm T},
+  \label{eq:extended-state}
+\end{equation}
+其中，$b_{a_x}$、$b_{a_y}$和$b_{\omega_z}$分别表示加速度计与陀螺仪的偏置。更完整的多传感器SLAM状态还可能包含重力、传感器外参、地图点和图像逆深度等变量\cite{fan2025fusion}。由此可见，运动状态的具体组成取决于机器人任务、运动模型、传感器配置和估计算法。
+
+运动状态会随时间变化。离散时刻$k$的状态转移可用一般形式表示为
+\begin{equation}
+  \vect{x}_{k}=f(\vect{x}_{k-1},\vect{u}_{k-1})+\vect{w}_{k-1},
+  \label{eq:state-transition}
+\end{equation}
+其中，$f(\cdot)$为运动或状态转移模型，$\vect{u}_{k-1}$表示控制输入或已知运动输入，$\vect{w}_{k-1}$表示模型未能描述的扰动。本章后续各节将用麦克纳姆轮运动学和编码器积分具体化这一预测过程。
+
+\subsection*{6.2.2 状态真值、测量值与估计值}
+
+\subsubsection*{6.2.2.1 状态真值}
+
+状态真值（ground truth）是评价系统时作为参照的真实状态。在仿真中，物理引擎可以提供接近模型内部真值的位姿；在实物实验中，通常需要高精度运动捕捉、全站仪、标定场地或其他独立测量系统近似获得真值。真值也有坐标系、时间同步和测量误差，不应把某个算法输出仅因“看起来平滑”就称为真值。
+
+实验报告必须说明真值来源。例如，“Gazebo模型位姿”“外部光学定位结果”和“人工卷尺测得终点”代表不同的精度、采样率与适用范围。若没有独立参照，只能比较不同估计之间的一致性，不能声称已经得到绝对误差。
+
+\subsubsection*{6.2.2.2 测量值}
+
+测量值（measurement）是传感器在某一时刻输出的数据，可用一般模型表示为
+\begin{equation}
+  \vect{z}_k=h(\vect{x}_k)+\vect{v}_k,
+  \label{eq:measurement-model}
+\end{equation}
+其中，$h(\cdot)$描述状态如何映射为传感器输出，$\vect{v}_k$表示噪声和未建模误差。编码器计数、IMU角速度和激光距离分别对应不同的$h(\cdot)$，因此不能把它们当作同一状态量直接比较。
+
+
+
+\subsubsection*{6.2.2.3 状态估计值}
+
+状态估计值（state estimate）记为$\hat{\vect{x}}_k$，表示算法根据截至时刻$k$的输入和测量对真实状态作出的判断。轮式里程计积分、IMU姿态解算、激光里程计和多传感器滤波都属于状态估计，只是使用的模型与信息来源不同。
+
+估计误差定义为
+\begin{equation}
+  \vect{e}_k=\vect{x}_k-\hat{\vect{x}}_k.
+  \label{eq:estimation-error}
+\end{equation}
+只有获得足够可信的真值时，才能直接计算该误差。滤波器常用误差协方差
+\begin{equation}
+  \vect{P}_k=\mathrm{E}\!\left[\vect{e}_k\vect{e}_k^{\mathrm T}\right]
+  \label{eq:state-covariance}
+\end{equation}
+描述估计不确定性。$\vect{P}_k$是模型内部对误差统计特性的表达，不等于已经测得的实际误差，也不能仅凭协方差数值较小就证明估计准确。
+
+\subsubsection*{6.2.2.4 用三个层次解释同一次运动}
+
+以机器人向前行驶\SI{1}{m}为例：
+\begin{itemize}
+  \item \textbf{真值层：}独立运动捕捉系统给出机器人实际移动距离和航向变化；
+  \item \textbf{测量层：}四个编码器给出转角，IMU给出角速度、比力以及可选的磁场测量；
+  \item \textbf{估计层：}运动学模型与融合算法输出位姿、速度及协方差。
+\end{itemize}
+
+若机器人发生横向打滑，编码器测量仍可能看似正常，但由其积分得到的估计会偏离真值；IMU可能观察到侧向加速度或偏航角速度变化。融合算法的任务是利用这些互补信息修正估计，同时反映剩余不确定性，而不是宣称完全消除误差。
+
+\subsection*{6.2.3 \texttt{base\_link}与\texttt{odom}坐标变换树}
+
+\texttt{base\_link}是固定在机器人底盘上的机体坐标系，随机器人一起平移和旋转；\texttt{odom}是局部里程计坐标系，用于表达从某一初始时刻开始连续累积的机器人运动。两者通常构成
+\begin{equation}
+  \texttt{odom}\rightarrow\texttt{base\_link}
+  \label{eq:odom-base-link-tree}
+\end{equation}
+的父子关系，其中变换表示机器人底盘在局部里程计坐标系中的位姿。按照REP~105约定，\texttt{odom}中的位姿应保持局部连续，适合短时控制和局部规划，但会随编码器积分和IMU漂移逐渐偏离全局真实位置\cite{rep105}。
+
+发布该变换时必须明确唯一数据源。轮式里程计节点或融合状态估计节点可以发布\texttt{odom}$\rightarrow$\texttt{base\_link}，但不应由多个节点同时发布同一对坐标变换，否则会出现TF跳变。完整的\texttt{map}$\rightarrow$\texttt{odom}$\rightarrow$\texttt{base\_link}三层关系留到第7章引入全局定位后讨论。
+\section*{6.3 轮式里程计与IMU测量}
+
+轮式里程计与IMU都不能直接给出机器人在\texttt{odom}坐标系中的真实位姿。前者从车轮转动推算底盘运动，后者测量机体的角速度、比力和可选磁场信息。本节先建立“原始测量---底盘速度---局部位姿”的计算链，再分析两类测量为何会产生累计误差，为6.4节的扩展卡尔曼滤波融合准备输入。
+
+\subsection*{6.3.1 编码器脉冲转轮速及里程计积分}
+
+轮式编码器（wheel encoder）测量电机轴或车轮的角位移、脉冲计数或角速度。编码器并不直接测量机器人在地面上的$x$、$y$位置；必须结合轮径、减速比、车轮编号和底盘运动学，才能把车轮转动转换为底盘速度，再对速度积分得到位姿。
+
+对本教材，编码器数据链路可概括为
+\begin{equation}
+  \text{脉冲计数}
+  \rightarrow \text{车轮转角}
+  \rightarrow \text{车轮角速度}
+  \rightarrow \text{底盘速度}
+  \rightarrow \text{位姿积分}.
+  \label{eq:encoder-chain}
+\end{equation}
+6.1节已经建立四个麦克纳姆轮角速度与底盘速度之间的转换，本节在此基础上完成里程计积分。
+
+设第$i$个车轮在相邻采样时刻$t_{k-1}$与$t_k$之间的编码器计数增量为$\Delta c_{i,k}$，每个车轮转一周对应的有效计数为$C_i$，则车轮转角增量为
+\begin{equation}
+  \Delta\phi_{i,k}=\frac{2\pi\Delta c_{i,k}}{C_i}.
+  \label{eq:encoder-count-to-angle}
+\end{equation}
+这里的$C_i$应是折算到车轮轴后的有效计数。若编码器安装在电机轴上，就必须把编码器分辨率、倍频计数方式和减速比统一计入$C_i$，不能把电机轴一周误当成车轮一周。
+
+采样周期$\Delta t_k=t_k-t_{k-1}$内的平均车轮角速度为
+\begin{equation}
+  \omega_{i,k}=\frac{\Delta\phi_{i,k}}{\Delta t_k}.
+  \label{eq:encoder-angle-to-speed}
+\end{equation}
+式中$\Delta t_k$应由测量时间戳计算，而不是在程序中始终假定为固定值。计数器回绕、通信丢帧或时间戳重复都会造成异常大的轮速，因此换算前应检查计数增量和采样周期是否处于合理范围。
+
+将四个车轮角速度组成
+\begin{equation}
+  \vect{\omega}_{w,k}=
+  \begin{bmatrix}
+    \omega_{1,k} & \omega_{2,k} & \omega_{3,k} & \omega_{4,k}
+  \end{bmatrix}^{\mathrm T},
+\end{equation}
+再代入6.1节的麦克纳姆轮正运动学，可得到底盘坐标系中的速度
+\begin{equation}
+  \vect{v}_{B,k}=
+  \begin{bmatrix}
+    v_{x,k} & v_{y,k} & \omega_{z,k}
+  \end{bmatrix}^{\mathrm T}.
+  \label{eq:encoder-body-velocity}
+\end{equation}
+这一步的符号取决于车轮编号、滚子布置和电机正方向。调试时应分别执行低速前进、左移和逆时针旋转，观察四轮计数增量的符号组合是否与6.1节约定一致。
+
+底盘速度必须先从\texttt{base\_link}方向转换到\texttt{odom}方向，才能更新局部位姿。假定一个采样周期内速度近似不变，取中点航向角
+\begin{equation}
+  \theta_{k-\frac{1}{2}}
+  =\theta_{k-1}+\frac{1}{2}\omega_{z,k}\Delta t_k,
+\end{equation}
+则二维位姿可按
+\begin{align}
+  x_k &= x_{k-1}
+  +\left(v_{x,k}\cos\theta_{k-\frac{1}{2}}
+  -v_{y,k}\sin\theta_{k-\frac{1}{2}}\right)\Delta t_k,\\
+  y_k &= y_{k-1}
+  +\left(v_{x,k}\sin\theta_{k-\frac{1}{2}}
+  +v_{y,k}\cos\theta_{k-\frac{1}{2}}\right)\Delta t_k,\\
+  \theta_k &= \theta_{k-1}+\omega_{z,k}\Delta t_k
+  \label{eq:mecanum-odometry-integration}
+\end{align}
+进行离散积分。中点形式比直接使用$\theta_{k-1}$更能反映采样周期内同时平移和旋转的情况，但它仍建立在轮地无滑动、几何参数正确和周期内速度近似恒定等假设上。由式~\eqref{eq:mecanum-odometry-integration}得到的是局部位姿估计，不是真值。
+
+\subsection*{6.3.2 IMU角速度、加速度与姿态测量}
+
+惯性测量单元（Inertial Measurement Unit，IMU）常按测量通道数分为六轴和九轴。这里的“轴”是传感器三轴测量通道数量之和，并不是机器人具有六个或九个空间运动自由度。
+
+\begin{itemize}
+  \item \textbf{六轴IMU：}由一个三轴加速度计和一个三轴陀螺仪组成，共有$3+3=6$个测量通道。三轴加速度计沿传感器$x$、$y$、$z$轴测量比力，单位为\si{m/s^2}；三轴陀螺仪绕$x$、$y$、$z$轴测量角速度，单位为\si{rad/s}。
+  \item \textbf{九轴IMU：}在六轴IMU基础上增加一个三轴磁力计，共有$3+3+3=9$个测量通道。三轴磁力计测量传感器坐标系中$x$、$y$、$z$方向的磁感应强度，常用单位为\si{\micro\tesla}。它为相对于地磁场的航向判断提供观测信息。
+\end{itemize}
+
+六轴或九轴IMU直接测得的是比力、角速度以及磁场，而不是横滚角、俯仰角和偏航角。设备给出的姿态通常是内部算法融合上述测量后的估计值。机器人静止或低动态运动时，六轴IMU可利用重力方向约束横滚角和俯仰角，但缺少绝对偏航参考，偏航角会因陀螺仪零偏积分而漂移。九轴IMU可利用地磁场约束偏航角，但电机、电源线、钢结构及其他磁性物体会造成硬磁或软磁干扰，因此加入磁力计并不意味着航向一定更准确。
+
+ROS~2中，\texttt{sensor\_msgs/msg/Imu}用于表达姿态估计、三轴角速度、三轴线加速度及其协方差\cite{ros2imu}；磁力计测量通常通过独立的\texttt{sensor\_msgs/msg/MagneticField}消息发布\cite{ros2magneticfield}。
+
+读取\texttt{Imu}消息时应区分三个层次：\texttt{angular\_velocity}和\texttt{linear\_acceleration}来自惯性测量，\texttt{orientation}则可能是设备内部姿态算法的输出。若设备不提供某类估计，驱动应按接口约定标记对应协方差，使用者不能仅因消息字段存在就认为数据有效。各向量都必须结合\texttt{header.frame\_id}解释；传感器安装方向与\texttt{base\_link}不一致时，需要先通过坐标变换统一轴向。
+
+IMU更新频率通常较高，不依赖外部环境的纹理与几何，可在短时间内反映快速转动和加减速。IMU能够提供短时运动约束，但积分会产生长期漂移。从测量模型看，IMU输出可概括为
+\begin{align}
+  \widetilde{\vect{a}} &= \vect{a}_{\mathrm{specific}}+\vect{b}_a+\vect{n}_a,\\
+  \widetilde{\vect{\omega}} &= \vect{\omega}+\vect{b}_{\omega}+\vect{n}_{\omega},
+  \label{eq:imu-measurement}
+\end{align}
+九轴IMU还包含磁力计测量模型
+\begin{equation}
+  \widetilde{\vect{m}}=\vect{m}+\vect{b}_m+\vect{n}_m,
+  \label{eq:magnetometer-measurement}
+\end{equation}
+其中，$\vect{b}$表示偏置，$\vect{n}$表示随机噪声，$\vect{m}$表示传感器坐标系中的磁场矢量。加速度计测量的是比力而不是已经去除重力后的机器人平动加速度。设备静止时，加速度测量的模长通常仍接近重力加速度$g$，其符号和分量取决于传感器轴向、姿态及驱动约定，因此不能把静止时的非零输出简单判断为故障。
+
+IMU常见问题包括：安装轴向与底盘坐标系不一致、时间戳延迟、静止零偏、振动噪声、重力处理错误。检查IMU时应同时观察数值、坐标系、单位、时间戳和协方差，而不能只看话题是否存在。
+
+\subsection*{6.3.3 里程计累计误差与IMU零偏、漂移特性}
+
+轮式里程计的误差会在速度积分过程中累积。轮径、减速比和底盘几何尺寸偏差属于可重复出现的系统误差；轮地打滑、滚子接触切换、地面不平和碰撞属于随工况变化的非系统误差。编码器即使准确记录车轮转动，也不能证明机器人相对地面没有滑动\cite{borenstein1996}。
+
+系统误差往往在重复实验中表现出相似方向。例如，四个有效轮径整体偏大时，直线里程可能按比例高估；旋转几何参数不准确时，原地旋转的航向变化会持续偏大或偏小。非系统误差则与地面、载荷和运动状态密切相关，尤其是麦克纳姆轮横移时，滚子接触与侧向滑动会使理想运动学更容易失效。标定可以减小系统误差，但不能消除每一次打滑。
+
+IMU误差主要包括零偏、比例因子误差、随机噪声和温度漂移。陀螺仪存在很小的静止零偏时，对角速度积分后仍会形成不断增长的姿态误差；加速度计偏置经过一次积分影响速度，经过二次积分影响位置。磁力计虽可提供航向约束，却容易受到电机、电源线和钢结构产生的局部磁场干扰\cite{fan2025fusion}。
+
+判断误差来源时，可先让机器人保持静止，记录编码器增量、三轴角速度和三轴加速度的均值与波动；再分别执行直线、横移和原地旋转，比较重复试验中的误差方向。若静止时已经持续漂移，应优先检查零偏、振动、时间戳和坐标轴；若只有横移误差明显，应优先检查滚子方向、轮速符号、地面摩擦与侧向打滑；若误差随行驶距离稳定按比例增长，则应检查轮径、减速比和有效计数配置。
+
+\paragraph{三类传感器的互补关系。}
+编码器、IMU和激光雷达观察的是不同物理量，不能把三者输出直接求平均。表~\ref{tab:sensor-complementarity}从测量对象和误差特性说明其互补关系。
+
+\begin{table}[htbp]
+  \centering
+  \caption{编码器、IMU与激光雷达对比}
+  \label{tab:sensor-complementarity}
+  \begin{tabular}{p{0.12\textwidth}p{0.23\textwidth}p{0.22\textwidth}p{0.31\textwidth}}
+    \toprule
+    传感器 & 直接测量量 & 主要优势 & 主要局限与融合中的作用 \\
+    \midrule
+    编码器 & 车轮或电机轴的脉冲计数、转角或角速度 & 更新连续、成本较低，便于通过运动学预测底盘速度 & 无法直接发现轮地打滑，参数误差会随积分累积；为局部位姿估计提供连续运动预测 \\
+    IMU & 三轴比力与三轴角速度；九轴设备还测量三轴磁场 & 频率高，能快速反映转动和加减速，不依赖外部环境几何 & 存在零偏、噪声和积分漂移，磁力计易受干扰；用于约束短时姿态和运动变化 \\
+    激光雷达 & 传感器坐标系中的环境距离或三维点 & 可利用稳定环境几何约束累计位姿误差 & 依赖环境结构、扫描匹配、标定和时间同步；不直接测量机器人位姿，在第7章中用于建图和全局定位\cite{ros2laserscan,fan2025fusion} \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+因此，编码器和IMU适合提供连续的局部运动信息，但都不能单独保证长期无漂移。6.4节先利用这两类测量，通过扩展卡尔曼滤波联合估计局部位姿与速度；第7章再引入激光雷达和环境地图，为累计误差提供外部几何约束。
+
+\subsection*{观察与辨析任务}
+
+本节不要求立即实现融合算法，而是建立数据辨析能力。建议围绕一段机器人静止、直行、横移和旋转的数据完成以下观察：
+\begin{enumerate}
+  \item 列出编码器、六轴IMU和九轴IMU各自直接测量的物理量，禁止把算法派生量写成直接测量；
+  \item 检查每个ROS消息的\texttt{header.stamp}和\texttt{header.frame\_id}，记录采样频率；
+  \item 机器人静止时观察编码器增量、IMU角速度和加速度是否为理想零值，并解释偏差来源；
+  \item 比较机器人纵向运动与横向运动时的编码器模式，说明为何编码器不能单独证明未发生打滑；
+  \item 比较六轴与九轴IMU的航向观测能力，并说明磁场干扰可能造成的影响。
+\end{enumerate}
+
+\subsection*{常见概念错误}
+
+\begin{table}[htbp]
+  \centering
+  \caption{状态感知中的常见概念错误}
+  \begin{tabular}{p{0.27\textwidth}p{0.29\textwidth}p{0.34\textwidth}}
+    \toprule
+    错误说法或现象 & 问题所在 & 正确检查方向 \\
+    \midrule
+    “编码器测得机器人位置” & 编码器直接测量轴或轮的转动，位置由模型和积分得到 & 分开记录原始计数、轮速、底盘速度和位姿估计 \\
+    “IMU静止时加速度应全为零” & 加速度计测量涉及重力与传感器姿态 & 核对坐标系、重力方向、驱动处理和设备定义 \\
+    “融合后输出就是真值” & 融合结果仍是带不确定性的估计 & 使用独立参照、重复实验和协方差共同评价 \\
+    “协方差越小一定越准确” & 过小协方差可能只是算法过度自信或配置错误 & 比较实际误差、残差和统计一致性 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\subsection*{本节小结}
+
+移动机器人局部位姿估计首先要定义位姿、速度和运动状态，再区分真值、测量值与估计值。\texttt{odom}$\rightarrow$\texttt{base\_link}表达连续但可能漂移的局部位姿。编码器通过车轮转动间接推断底盘运动，IMU测量比力与角速度，九轴设备还增加磁场测量。两类传感器都存在误差和漂移，因此其输出需要结合运动模型与不确定性进行融合。
+
+\subsection*{思考与练习}
+
+\begin{enumerate}
+  \item \textbf{概念题：}分别说明位姿、速度、测量值和估计值的含义，并为每个概念给出一个移动机器人实例。
+  \item \textbf{分析题：}机器人在光滑地面横移时四轮编码器输出符合运动学模型，但实际位移偏小。判断哪些量是测量值、哪些量是估计值，并提出一种获得近似真值的方法。
+  \item \textbf{接口题：}查阅ROS~2 Humble的\texttt{sensor\_msgs/msg/Imu}与\texttt{sensor\_msgs/msg/MagneticField}定义，列出时间戳、坐标系、主要物理量和数据质量字段。
+  \item \textbf{诊断题：}IMU在机器人静止时持续输出非零偏航角速度。设计“观察---假设---检查---复测”流程，至少考虑零偏、振动、坐标系和时间戳。
+  \item \textbf{设计题：}为“直行\SI{2}{m}并原地旋转\SI{90}{\degree}”设计真值、测量和估计三层数据记录方案，说明每种数据的来源与限制。
+\end{enumerate}
+
+\subsection*{参考资料与编写状态}
+
+\begin{thebibliography}{9}
+
+\bibitem{fan2025fusion}
+Fan, Z., Zhang, L., Wang, X., Shen, Y., Deng, F.
+LiDAR, IMU, and camera fusion for simultaneous localization and mapping: a systematic review.
+\emph{Artificial Intelligence Review}, 2025, 58: 174.
+\href{https://doi.org/10.1007/s10462-025-11187-w}{doi:10.1007/s10462-025-11187-w}.
+
+\bibitem{borenstein1996}
+Borenstein, J., Feng, L.
+Measurement and correction of systematic odometry errors in mobile robots.
+\emph{IEEE Transactions on Robotics and Automation}, 1996, 12(6): 869--880.
+\href{https://doi.org/10.1109/70.544770}{doi:10.1109/70.544770}.
+
+\bibitem{thrun2005}
+Thrun, S., Burgard, W., Fox, D.
+\emph{Probabilistic Robotics}.
+Cambridge, MA: MIT Press, 2005.
+
+\bibitem{rep103}
+Foote, T., Purvis, M.
+REP~103: Standard Units of Measure and Coordinate Conventions.
+\href{https://www.ros.org/reps/rep-0103.html}{https://www.ros.org/reps/rep-0103.html}.
+
+\bibitem{rep105}
+Meeussen, W.
+REP~105: Coordinate Frames for Mobile Platforms.
+\href{https://www.ros.org/reps/rep-0105.html}{https://www.ros.org/reps/rep-0105.html}.
+
+\bibitem{rep145}
+ROS Community.
+REP~145: Conventions for IMU Sensor Drivers.
+\href{https://www.ros.org/reps/rep-0145.html}{https://www.ros.org/reps/rep-0145.html}.
+
+\bibitem{ros2imu}
+Open Robotics.
+\texttt{sensor\_msgs/msg/Imu}: ROS~2 Humble interface definition.
+\href{https://docs.ros.org/en/humble/p/sensor_msgs/msg/Imu.html}{ROS~2 Humble documentation}.
+
+\bibitem{ros2magneticfield}
+Open Robotics.
+\texttt{sensor\_msgs/msg/MagneticField}: ROS~2 Humble interface definition.
+\href{https://docs.ros.org/en/humble/p/sensor_msgs/msg/MagneticField.html}{ROS~2 Humble documentation}.
+
+\bibitem{ros2laserscan}
+Open Robotics.
+\texttt{sensor\_msgs/msg/LaserScan}: ROS~2 Humble interface definition.
+\href{https://docs.ros.org/en/humble/p/sensor_msgs/msg/LaserScan.html}{ROS~2 Humble documentation}.
+
+\end{thebibliography}
+
+\noindent
+\textbf{已完成：}6.2与6.3三级目录正文、概念辨析、观察任务、故障表、练习及参考文献映射。\\
+\textbf{资料边界：}指定综述用于传感器特性、状态向量和融合必要性；编码器误差由Borenstein--Feng论文补充，状态不确定性由\emph{Probabilistic Robotics}补充，ROS单位、坐标系和接口由官方规范补充。\\
+\textbf{待验证：}XeLaTeX编译；教学平台编码器与IMU的实际消息字段、频率、坐标系、噪声与漂移现象。\\
+\textbf{发布前检查：}本地综述PDF为开放获取论文副本，但仍需记录来源和许可；正文未复制原图，后续新增图示应原创绘制并标明许可。
+
+\end{document}

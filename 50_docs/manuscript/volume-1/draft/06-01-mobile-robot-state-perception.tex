@@ -1,0 +1,364 @@
+% !TeX program = xelatex
+% 分册：第二册《应用篇：建模、感知、规划与控制》
+% 章节：第6章 6.1节 移动机器人的状态感知
+% 内容状态：理论初稿，已完成静态审查，尚未进行 LaTeX 编译和教学实物验证。
+% 指定参考：Zheng Fan et al., LiDAR, IMU, and camera fusion for SLAM, 2025.
+
+\documentclass[UTF8,zihao=-4]{ctexart}
+
+\usepackage{amsmath,amssymb,bm}
+\usepackage{booktabs}
+\usepackage{geometry}
+\usepackage{hyperref}
+\usepackage{siunitx}
+
+\geometry{a4paper,left=28mm,right=28mm,top=25mm,bottom=25mm}
+\hypersetup{colorlinks=true,linkcolor=blue,citecolor=blue,urlcolor=blue}
+\sisetup{per-mode=symbol}
+
+\newcommand{\vect}[1]{\bm{#1}}
+
+\title{第6章麦克纳姆轮机器人里程计与多传感器融合\\
+\large 6.1 移动机器人的状态感知}
+\author{}
+\date{}
+
+\begin{document}
+
+\maketitle
+
+\begin{table}[htbp]
+  \centering
+  \caption*{教学与编写信息}
+  \begin{tabular}{p{0.22\textwidth}p{0.68\textwidth}}
+    \toprule
+    项目 & 内容 \\
+    \midrule
+    所属教材 & 第二册《机器人操作系统与智能机器人开发——应用篇：建模、感知、规划与控制》 \\
+    章节位置 & 第6章“麦克纳姆轮机器人里程计与多传感器融合”第6.1节 \\
+    建议对象 & 已学习平面刚体运动、坐标系、ROS消息与移动机器人基础的本科生或研究生 \\
+    建议学时 & 1学时理论讲解；传感器观察与数据辨析作为课内核心任务 \\
+    技术属性 & 共同概念；ROS接口观察以Ubuntu 22.04与ROS~2 Humble为主 \\
+    智能闭环作用 & 感知与反馈：把机器人运动和传感器输出组织成可用于控制、建图和导航的状态信息 \\
+    内容状态 & 理论初稿；静态审查完成，LaTeX编译与教学实物验证待完成 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\subsection*{学习目标}
+
+完成本节后，学生能够：
+\begin{enumerate}
+  \item \textbf{K（知识与理解）：}区分位姿、速度、传感器偏置等状态量，并说明状态向量取决于机器人任务和模型；
+  \item \textbf{A（分析与诊断）：}比较编码器、IMU和激光雷达的测量对象、频率特点、优势与退化条件；
+  \item \textbf{T（工具与实现）：}根据ROS消息的时间戳、坐标系和字段判断数据表达的物理量，而不把话题数据直接等同于机器人真值；
+  \item \textbf{L（自主学习与迁移）：}使用“真值---测量---估计”框架阅读状态估计与多传感器融合资料。
+\end{enumerate}
+
+\subsection*{先修知识}
+
+\begin{itemize}
+  \item 第2章的坐标系、姿态和坐标变换基础；
+  \item 第4章的激光雷达、IMU与仿真传感器基础；
+  \item 第5章的底盘执行、编码器反馈和控制周期；
+  \item 向量、函数、均值和方差的基本概念。
+\end{itemize}
+
+\subsection*{关键词}
+
+\begin{table}[htbp]
+  \centering
+  \caption*{本节关键词}
+  \begin{tabular}{lll}
+    \toprule
+    中文名称 & English term & 缩写或符号 \\
+    \midrule
+    状态 & state & $\vect{x}$ \\
+    位姿 & pose & --- \\
+    测量值 & measurement & $\vect{z}$ \\
+    估计值 & estimate & $\hat{\vect{x}}$ \\
+    真值 & ground truth & --- \\
+    惯性测量单元 & Inertial Measurement Unit & IMU \\
+    激光雷达 & Light Detection and Ranging & LiDAR \\
+    里程计 & odometry & odom \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\subsection*{问题情境与学习路径}
+
+机器人控制器可以读取四个编码器的计数，IMU可以连续输出角速度和线加速度，激光雷达可以返回一组环境距离。数据看似丰富，但没有任何一个传感器直接给出“机器人此刻在地图中的完全真实状态”。车轮可能打滑，IMU积分会漂移，激光雷达在长走廊或开阔区域可能缺少足够的几何约束。若把任一传感器输出无条件当作真值，控制、建图和导航都会继承错误。
+
+状态感知的核心问题不是“传感器有没有数据”，而是三个更具体的问题：系统需要估计哪些量；每个传感器实际测到了什么；怎样表达估计结果及其不确定性。本节按照“定义状态---认识测量---区分真值与估计”的顺序建立概念基础。扩展卡尔曼滤波和\texttt{robot\_localization}配置将在6.6与6.7节展开，SLAM前后端和地图优化留到第7章。
+
+\section*{6.1 移动机器人的状态感知}
+
+Zheng Fan等人的系统综述指出，LiDAR、相机和IMU具有不同的观测能力与退化条件，多传感器系统的价值来自信息互补，而不是简单增加传感器数量\cite{fan2025fusion}。本节借用该综述的状态与传感器视角，但把讨论范围限制在本章教学平台直接使用的编码器、IMU和激光雷达。相机模型、图像接口和视觉估计将在第10章展开。
+
+\subsection*{6.1.1 位姿、速度与运动状态}
+
+\subsubsection*{6.1.1.1 位姿}
+
+位姿（pose）描述机器人“在哪里、朝向哪里”，由位置和姿态共同组成。对于在平面内运动的麦克纳姆轮机器人，其位姿可表示为
+\begin{equation}
+  \vect{q}=
+  \begin{bmatrix}
+    x & y & \theta
+  \end{bmatrix}^{\mathrm T},
+  \label{eq:planar-pose}
+\end{equation}
+其中，$x$和$y$表示机器人参考点在给定世界坐标系中的位置，$\theta$表示航向角。位姿必须与参考坐标系一起解释。
+
+\subsubsection*{6.1.1.2 速度}
+
+速度（velocity）描述机器人“正在怎样运动”，包括线速度和角速度。位姿相同的机器人可能具有完全不同的运动方向和快慢，因此仅有位姿不足以描述其瞬时运动。平面底盘在底盘坐标系中的速度可写为
+\begin{equation}
+  \vect{v}_B=
+  \begin{bmatrix}
+    v_x & v_y & \omega_z
+  \end{bmatrix}^{\mathrm T},
+  \label{eq:planar-twist}
+\end{equation}
+其中，$v_x$、$v_y$是底盘坐标系中的纵向与横向线速度，$\omega_z$是偏航角速度。根据右手坐标约定，移动机器人通常取$x$轴向前、$y$轴向左、$z$轴向上，线速度使用\si{m/s}，角速度使用\si{rad/s}\cite{rep103}。
+
+与位姿一样，速度也必须指明参考坐标系。式\eqref{eq:planar-twist}中的$v_x$和$v_y$随底盘方向一起变化；若将速度表示在世界坐标系中，则需要根据航向角$\theta$进行坐标变换。
+
+\subsubsection*{6.1.1.3 运动状态}
+
+运动状态（motion state）是用于描述机器人当前运动并预测其后续变化的一组变量。对平面麦克纳姆轮机器人，最基本的运动状态由位姿和速度组成：
+\begin{equation}
+  \vect{x}_{m}=
+  \begin{bmatrix}
+    x & y & \theta & v_x & v_y & \omega_z
+  \end{bmatrix}^{\mathrm T}.
+  \label{eq:teaching-state}
+\end{equation}
+该状态同时回答机器人“在哪里”“朝向哪里”和“怎样运动”。状态向量不是传感器数据的简单拼接，而应根据任务目标和运动模型选取。
+
+在融合IMU等传感器时，还可以将持续影响测量的误差量加入估计状态。例如，包含IMU偏置的扩展状态可写为
+\begin{equation}
+  \vect{x}_{e}=
+  \begin{bmatrix}
+    x & y & \theta & v_x & v_y & \omega_z & b_{a_x} & b_{a_y} & b_{\omega_z}
+  \end{bmatrix}^{\mathrm T},
+  \label{eq:extended-state}
+\end{equation}
+其中，$b_{a_x}$、$b_{a_y}$和$b_{\omega_z}$分别表示加速度计与陀螺仪的偏置。更完整的多传感器SLAM状态还可能包含重力、传感器外参、地图点和图像逆深度等变量\cite{fan2025fusion}。由此可见，运动状态的具体组成取决于机器人任务、运动模型、传感器配置和估计算法。
+
+运动状态会随时间变化。离散时刻$k$的状态转移可用一般形式表示为
+\begin{equation}
+  \vect{x}_{k}=f(\vect{x}_{k-1},\vect{u}_{k-1})+\vect{w}_{k-1},
+  \label{eq:state-transition}
+\end{equation}
+其中，$f(\cdot)$为运动或状态转移模型，$\vect{u}_{k-1}$表示控制输入或已知运动输入，$\vect{w}_{k-1}$表示模型未能描述的扰动。后续6.2至6.3节将用麦克纳姆轮运动学和编码器积分具体化这一预测过程。
+
+\subsection*{6.1.2 编码器、IMU与激光雷达}
+
+编码器和IMU主要感知机器人自身运动，激光雷达主要感知机器人与外部环境的几何关系。三者的测量对象、更新频率、误差来源和退化条件不同，在机器人感知系统中发挥的作用也不同。
+
+\subsubsection*{6.1.2.1 编码器：从车轮转动推断底盘运动}
+
+轮式编码器（wheel encoder）测量电机轴或车轮的角位移、脉冲计数或角速度。编码器并不直接测量机器人在地面上的$x$、$y$位置；必须结合轮径、减速比、车轮编号和底盘运动学，才能把车轮转动转换为底盘速度，再对速度积分得到位姿。
+
+编码器的优势是更新频率较高、成本较低、短时间输出连续，而且不依赖环境纹理或光照。其主要限制是无法直接观测轮地打滑。轮径误差、安装尺寸误差和左右或各轮比例误差会形成系统误差；地面不平、急加速、碰撞和横向滑动会产生非系统误差。
+对本教材，编码器数据链路可概括为
+\begin{equation}
+  \text{脉冲计数}
+  \rightarrow \text{车轮转角}
+  \rightarrow \text{车轮角速度}
+  \rightarrow \text{底盘速度}
+  \rightarrow \text{位姿积分}.
+  \label{eq:encoder-chain}
+\end{equation}
+6.2节将建立四个麦克纳姆轮角速度与底盘速度之间的转换，6.3节再讨论积分和累计误差。
+
+\subsubsection*{6.1.2.2 IMU：高频感知角速度与线加速度}
+
+惯性测量单元通常由陀螺仪和加速度计组成，部分设备还集成磁力计。陀螺仪测量角速度，加速度计测量比力；设备或驱动也可能提供经过内部算法处理的姿态。ROS~2中常用\texttt{sensor\_msgs/msg/Imu}表达姿态、角速度、线加速度及对应协方差\cite{ros2imu}，坐标轴和驱动输出还应遵守REP~145\cite{rep145}。
+
+IMU更新频率通常较高，不依赖外部环境的纹理与几何，可在短时间内反映快速转动和加减速。指定综述指出，IMU能够提供短时运动约束，但积分会产生长期漂移；磁力计还可能受到环境电磁干扰\cite{fan2025fusion}。从测量模型看，IMU输出可概括为
+\begin{align}
+  \widetilde{\vect{a}} &= \vect{a}_{\mathrm{specific}}+\vect{b}_a+\vect{n}_a,\\
+  \widetilde{\vect{\omega}} &= \vect{\omega}+\vect{b}_{\omega}+\vect{n}_{\omega},
+  \label{eq:imu-measurement}
+\end{align}
+其中，$\vect{b}$表示偏置，$\vect{n}$表示随机噪声。加速度测量还涉及重力、传感器姿态和坐标变换，不能把静止时的非零加速度简单判断为传感器故障。
+
+IMU常见问题包括：安装轴向与底盘坐标系不一致、时间戳延迟、静止零偏、振动噪声、重力处理错误，以及把NED设备输出直接当作ROS常用ENU方向。检查IMU时应同时观察数值、坐标系、单位、时间戳和协方差，而不能只看话题是否存在。
+
+\subsubsection*{6.1.2.3 激光雷达：从环境几何约束机器人运动}
+
+激光雷达（LiDAR Light Detection and Ranging）主动发射并接收光信号，通过测距获得机器人周围的几何观测。二维雷达常发布\texttt{sensor\_msgs/msg/LaserScan}，其中包含角度范围、角分辨率、量程、扫描时间和距离数组；三维雷达通常发布点云。雷达测得的是传感器坐标系中的距离或三维点，不是机器人在地图中的绝对位姿\cite{ros2laserscan}。
+
+要由激光数据估计运动，需要比较连续扫描，或把当前扫描与已有地图进行匹配。通常将LiDAR残差概括为扫描间或扫描与地图之间的几何误差，并讨论点到点、点到线和点到平面等约束\cite{fan2025fusion}。这些算法将在第7章建图部分进一步介绍，本节只强调其输入与输出边界。
+
+LiDAR能够提供较直接的几何距离，不依赖可见光照明，但并非在所有场景下都可靠。长走廊、开阔区域或几何重复环境可能缺少足够约束；玻璃、镜面、强反射、超出量程的物体和动态障碍物也可能造成无效或错误测量。机器人运动过程中，一帧扫描内各点采样时刻不同，还可能出现运动畸变。
+
+\subsubsection*{6.1.2.4 三类传感器为什么互补}
+
+三类传感器可分别回答不同问题：
+\begin{itemize}
+  \item 编码器回答“车轮转了多少”，适合连续预测底盘运动，但无法直接发现打滑；
+  \item IMU回答“机器人正在怎样转动和加速”，短时响应快，但偏置和积分会造成漂移；
+  \item LiDAR回答“周围几何结构在哪里”，能够约束累计误差，但依赖环境结构、匹配质量和正确标定。
+\end{itemize}
+
+多传感器融合不是对三个数值求平均。它需要统一时间、坐标系和物理量，根据测量模型与不确定性决定每种数据对哪些状态提供约束。综述将多传感器SLAM分为松耦合与紧耦合，并指出异构数据会带来预处理、标定和退化检测等工程问题\cite{fan2025fusion}。本章采用由浅入深的路线：先建立轮式里程计，再认识IMU测量，随后用扩展卡尔曼滤波完成基础融合；完整LiDAR-SLAM放在下一章。
+
+\subsection*{6.1.3 状态真值、测量值与估计值}
+
+\subsubsection*{6.1.3.1 真值是评价参照，不是普通话题数据}
+
+状态真值（ground truth）是评价系统时作为参照的真实状态。在仿真中，物理引擎可以提供接近模型内部真值的位姿；在实物实验中，通常需要高精度运动捕捉、全站仪、标定场地或其他独立测量系统近似获得真值。真值也有坐标系、时间同步和测量误差，不应把某个算法输出仅因“看起来平滑”就称为真值。
+
+实验报告必须说明真值来源。例如，“Gazebo模型位姿”“外部光学定位结果”和“人工卷尺测得终点”代表不同的精度、采样率与适用范围。若没有独立参照，只能比较不同估计之间的一致性，不能声称已经得到绝对误差。
+
+\subsubsection*{6.1.3.2 测量值是传感器对状态的间接观察}
+
+测量值（measurement）是传感器在某一时刻输出的数据，可用一般模型表示为
+\begin{equation}
+  \vect{z}_k=h(\vect{x}_k)+\vect{v}_k,
+  \label{eq:measurement-model}
+\end{equation}
+其中，$h(\cdot)$描述状态如何映射为传感器输出，$\vect{v}_k$表示噪声和未建模误差。编码器计数、IMU角速度和激光距离分别对应不同的$h(\cdot)$，因此不能把它们当作同一状态量直接比较。
+
+理解测量值至少要回答五个问题：
+\begin{enumerate}
+  \item 测量的物理量是什么，单位是什么？
+  \item 数据在哪个坐标系中表达？
+  \item 时间戳对应采样时刻、发送时刻还是接收时刻？
+  \item 测量在哪些范围或环境中有效？
+  \item 协方差、状态码或无效值如何表达数据质量？
+\end{enumerate}
+
+ROS消息只提供数据结构，不能自动保证驱动的单位、坐标系、时间戳和协方差配置正确。REP~103、REP~105和REP~145为这些约定提供基础，但仍需结合具体设备文档和实验检查\cite{rep103,rep105,rep145}。
+
+\subsubsection*{6.1.3.3 估计值来自模型与测量的共同约束}
+
+状态估计值（state estimate）记为$\hat{\vect{x}}_k$，表示算法根据截至时刻$k$的输入和测量对真实状态作出的判断。轮式里程计积分、IMU姿态解算、激光里程计和多传感器滤波都属于状态估计，只是使用的模型与信息来源不同。《Probabilistic Robotics》强调以概率方法表示机器人状态的不确定性\cite{thrun2005}。
+
+估计误差定义为
+\begin{equation}
+  \vect{e}_k=\vect{x}_k-\hat{\vect{x}}_k.
+  \label{eq:estimation-error}
+\end{equation}
+只有获得足够可信的真值时，才能直接计算该误差。滤波器常用误差协方差
+\begin{equation}
+  \vect{P}_k=\mathrm{E}\!\left[\vect{e}_k\vect{e}_k^{\mathrm T}\right]
+  \label{eq:state-covariance}
+\end{equation}
+描述估计不确定性。$\vect{P}_k$是模型内部对误差统计特性的表达，不等于已经测得的实际误差，也不能仅凭协方差数值较小就证明估计准确。
+
+\subsubsection*{6.1.3.4 用三个层次解释同一次运动}
+
+以机器人向前行驶\SI{1}{m}为例：
+\begin{itemize}
+  \item \textbf{真值层：}独立运动捕捉系统给出机器人实际移动距离和航向变化；
+  \item \textbf{测量层：}四个编码器给出转角，IMU给出角速度与加速度，LiDAR给出各方向距离；
+  \item \textbf{估计层：}运动学模型与融合算法输出位姿、速度及协方差。
+\end{itemize}
+
+若机器人发生横向打滑，编码器测量仍可能看似正常，但由其积分得到的估计会偏离真值；IMU可能观察到侧向加速度，LiDAR匹配也可能产生不同的位姿约束。融合算法的任务是利用这些信息的互补性修正估计，同时反映剩余不确定性，而不是宣称完全消除误差。
+
+\subsection*{6.1.4 观察与辨析任务}
+
+本节不要求立即实现融合算法，而是建立数据辨析能力。建议围绕一段机器人静止、直行、横移和旋转的数据完成以下观察：
+\begin{enumerate}
+  \item 列出编码器、IMU和LiDAR各自直接测量的物理量，禁止把算法派生量写成直接测量；
+  \item 检查每个ROS消息的\texttt{header.stamp}和\texttt{header.frame\_id}，记录采样频率；
+  \item 机器人静止时观察编码器增量、IMU角速度和加速度是否为理想零值，并解释偏差来源；
+  \item 比较机器人纵向运动与横向运动时的编码器模式，说明为何编码器不能单独证明未发生打滑；
+  \item 在不使用“精度高”这一笼统表述的前提下，说明三类传感器分别在哪些条件下可能退化。
+\end{enumerate}
+
+\subsection*{6.1.5 常见概念错误}
+
+\begin{table}[htbp]
+  \centering
+  \caption{状态感知中的常见概念错误}
+  \begin{tabular}{p{0.27\textwidth}p{0.29\textwidth}p{0.34\textwidth}}
+    \toprule
+    错误说法或现象 & 问题所在 & 正确检查方向 \\
+    \midrule
+    “编码器测得机器人位置” & 编码器直接测量轴或轮的转动，位置由模型和积分得到 & 分开记录原始计数、轮速、底盘速度和位姿估计 \\
+    “IMU静止时加速度应全为零” & 加速度计测量涉及重力与传感器姿态 & 核对坐标系、重力方向、驱动处理和设备定义 \\
+    “LiDAR有距离数据就能定位” & 距离观测还需数据关联、扫描匹配或地图约束 & 检查环境几何、有效量程、TF和匹配质量 \\
+    “融合后输出就是真值” & 融合结果仍是带不确定性的估计 & 使用独立参照、重复实验和协方差共同评价 \\
+    “协方差越小一定越准确” & 过小协方差可能只是算法过度自信或配置错误 & 比较实际误差、残差和统计一致性 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\subsection*{6.1.6 本节小结}
+
+移动机器人状态感知首先要定义系统需要估计的状态，再判断每个传感器实际提供的测量约束。位姿描述机器人在哪里和朝向哪里，速度描述机器人正在怎样运动，偏置等变量用于解释持续影响测量的误差。编码器通过车轮转动间接推断底盘运动，IMU高频测量角速度和线加速度，LiDAR通过环境几何约束运动估计。三类传感器各有退化条件，融合的意义在于利用互补信息并表达不确定性。真值、测量值和估计值必须严格区分：测量不是状态本身，估计也不是真值。
+
+\subsection*{6.1.7 思考与练习}
+
+\begin{enumerate}
+  \item \textbf{概念题：}分别说明位姿、速度、测量值和估计值的含义，并为每个概念给出一个移动机器人实例。
+  \item \textbf{分析题：}机器人在光滑地面横移时四轮编码器输出符合运动学模型，但实际位移偏小。判断哪些量是测量值、哪些量是估计值，并提出一种获得近似真值的方法。
+  \item \textbf{接口题：}查阅ROS~2 Humble的\texttt{sensor\_msgs/msg/Imu}与\texttt{sensor\_msgs/msg/LaserScan}定义，列出时间戳、坐标系、主要物理量和数据质量字段。
+  \item \textbf{诊断题：}IMU在机器人静止时持续输出非零偏航角速度。设计“观察---假设---检查---复测”流程，至少考虑零偏、振动、坐标系和时间戳。
+  \item \textbf{设计题：}为“直行\SI{2}{m}并原地旋转\SI{90}{\degree}”设计真值、测量和估计三层数据记录方案，说明每种数据的来源与限制。
+\end{enumerate}
+
+\subsection*{6.1.8 Technical English}
+
+阅读指定综述的摘要和传感器介绍，掌握\emph{state estimation}、\emph{ground truth}、\emph{measurement}、\emph{drift}、\emph{bias}、\emph{degenerate environment}和\emph{sensor fusion}。用英文写四句话，分别说明编码器、IMU和LiDAR测量什么，以及为什么融合结果仍然不是绝对真值。
+
+\subsection*{6.1.9 参考资料与编写状态}
+
+\begin{thebibliography}{9}
+
+\bibitem{fan2025fusion}
+Fan, Z., Zhang, L., Wang, X., Shen, Y., Deng, F.
+LiDAR, IMU, and camera fusion for simultaneous localization and mapping: a systematic review.
+\emph{Artificial Intelligence Review}, 2025, 58: 174.
+\href{https://doi.org/10.1007/s10462-025-11187-w}{doi:10.1007/s10462-025-11187-w}.
+
+\bibitem{borenstein1996}
+Borenstein, J., Feng, L.
+Measurement and correction of systematic odometry errors in mobile robots.
+\emph{IEEE Transactions on Robotics and Automation}, 1996, 12(6): 869--880.
+\href{https://doi.org/10.1109/70.544770}{doi:10.1109/70.544770}.
+
+\bibitem{thrun2005}
+Thrun, S., Burgard, W., Fox, D.
+\emph{Probabilistic Robotics}.
+Cambridge, MA: MIT Press, 2005.
+
+\bibitem{rep103}
+Foote, T., Purvis, M.
+REP~103: Standard Units of Measure and Coordinate Conventions.
+\href{https://www.ros.org/reps/rep-0103.html}{https://www.ros.org/reps/rep-0103.html}.
+
+\bibitem{rep105}
+Meeussen, W.
+REP~105: Coordinate Frames for Mobile Platforms.
+\href{https://www.ros.org/reps/rep-0105.html}{https://www.ros.org/reps/rep-0105.html}.
+
+\bibitem{rep145}
+ROS Community.
+REP~145: Conventions for IMU Sensor Drivers.
+\href{https://www.ros.org/reps/rep-0145.html}{https://www.ros.org/reps/rep-0145.html}.
+
+\bibitem{ros2imu}
+Open Robotics.
+\texttt{sensor\_msgs/msg/Imu}: ROS~2 Humble interface definition.
+\href{https://docs.ros.org/en/humble/p/sensor_msgs/msg/Imu.html}{ROS~2 Humble documentation}.
+
+\bibitem{ros2laserscan}
+Open Robotics.
+\texttt{sensor\_msgs/msg/LaserScan}: ROS~2 Humble interface definition.
+\href{https://docs.ros.org/en/humble/p/sensor_msgs/msg/LaserScan.html}{ROS~2 Humble documentation}.
+
+\end{thebibliography}
+
+\noindent
+\textbf{已完成：}6.1.1至6.1.3三级目录正文、概念辨析、观察任务、故障表、练习、Technical English及参考文献映射。\\
+\textbf{资料边界：}指定综述用于传感器特性、状态向量和融合必要性；编码器误差由Borenstein--Feng论文补充，状态不确定性由\emph{Probabilistic Robotics}补充，ROS单位、坐标系和接口由官方规范补充。\\
+\textbf{待验证：}XeLaTeX编译；教学平台编码器、IMU和LiDAR的实际消息字段、频率、坐标系、噪声与退化现象。\\
+\textbf{发布前检查：}本地综述PDF为开放获取论文副本，但仍需记录来源和许可；正文未复制原图，后续新增图示应原创绘制并标明许可。
+
+\end{document}

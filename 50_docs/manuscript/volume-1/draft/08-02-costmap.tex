@@ -1,0 +1,76 @@
+% !TeX program = xelatex
+% 章节：第8章 8.2节 代价地图（Costmap）
+% 验证状态：理论与本地Navigation2源码静态审查完成；运行待验证。
+\documentclass[UTF8,zihao=-4]{ctexart}
+\usepackage{amsmath,amssymb,bm,booktabs,geometry,hyperref}
+\geometry{a4paper,left=28mm,right=28mm,top=25mm,bottom=25mm}
+\hypersetup{colorlinks=true,linkcolor=blue,citecolor=blue,urlcolor=blue}
+\title{第8章自主导航与任务执行\\\large 8.2 代价地图（Costmap）}
+\author{}\date{}
+\begin{document}\maketitle
+
+\noindent\textbf{教学定位：}本节解释Nav2如何把静态地图和实时传感器观测转换为规划、避障可使用的二维代价值。教学主线是“空间占用---分层更新---机器人外形---安全裕量”，而不是把参数表当作算法原理。
+
+\section*{8.2 代价地图（Costmap）}
+
+代价地图（costmap）把环境离散为规则网格，每个栅格保存通行风险，而不只是“有障碍/无障碍”二值标记。规划器和控制器利用代价差异避开障碍、贴边区域或禁止区。代价值来自多个图层的组合，随地图、传感器和机器人位置更新。分层结构允许不同传感器模态、空间分辨率和更新速率的数据共同修改同一代价表示\cite{navigation2source,macenski2023survey,macenski2020nav2}。
+
+\subsection*{8.2.1 静态层、障碍层与膨胀层}
+
+静态层（static layer）通常读取地图服务器发布的占据栅格，为墙体等长期不变结构提供基础代价。障碍层（obstacle layer）接收激光扫描或点云，将观测到的障碍标记到代价地图，并可利用射线清除传感器确认的自由空间。三维传感器还可使用体素层（voxel layer）在有限高度范围内维护体素，再投影为二维障碍。
+
+膨胀层（inflation layer）不制造新的实体障碍，而是在障碍周围建立随距离衰减的代价。其目的有二：一是让机器人外形与障碍保持安全间隔；二是为规划器提供平滑的风险梯度，使路径不必紧贴墙面。若膨胀半径过小，路径可能贴墙；若过大，窄通道可能被代价区域封闭。\texttt{inflation\_radius}和\texttt{cost\_scaling\_factor}必须结合地图分辨率、机器人轮廓及定位误差调节。
+
+分层代价地图可抽象为
+\begin{equation}
+  C(x,y)=\mathcal{M}\bigl(C_{\mathrm{static}},C_{\mathrm{obstacle}},C_{\mathrm{inflation}},\ldots\bigr),
+  \label{eq:layered-costmap}
+\end{equation}
+其中$\mathcal{M}$表示各插件按配置顺序和组合规则更新主代价地图。调试时应分层观察：静态墙体是否正确、实时障碍能否标记与清除、膨胀梯度是否覆盖预期安全区域。只观察最终路径会掩盖图层来源错误。
+
+\subsection*{8.2.2 全局代价地图与局部代价地图}
+
+全局代价地图服务较长距离路径规划，通常以\texttt{map}为全局坐标系，覆盖已知地图范围，并组合静态层、障碍层和膨胀层。局部代价地图服务控制与短时避障，通常以\texttt{odom}为全局坐标系，采用随机器人移动的滚动窗口，只保存机器人附近区域。两者使用相同的分层思想，但目的、范围、更新频率和容错重点不同。
+
+\begin{table}[htbp]
+  \centering
+  \caption{全局代价地图与局部代价地图的典型区别}
+  \begin{tabular}{p{0.20\textwidth}p{0.34\textwidth}p{0.34\textwidth}}
+    \toprule
+    对比项 & 全局代价地图 & 局部代价地图 \\
+    \midrule
+    主要用途 & 生成起点到目标的全局路径 & 跟踪路径并响应附近障碍 \\
+    常用坐标系 & \texttt{map} & \texttt{odom} \\
+    空间范围 & 已知地图或较大区域 & 机器人周围滚动窗口 \\
+    更新重点 & 全局连通性与静态结构 & 实时障碍、清除和低延迟 \\
+    典型故障 & 目标被判为不可达、路径绕行异常 & 机器人急停、贴障、局部振荡 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+局部窗口必须足以覆盖制动和绕障所需距离，但并非越大越好。窗口增大会提高计算与传感器覆盖要求；更新频率过低会使快速障碍信息滞后。配置时还需核对\texttt{observation\_sources}、数据类型、Topic、最大障碍高度、标记范围、清除范围和TF容差。传感器有数据但坐标变换失败时，障碍层仍可能无法更新。
+
+\subsection*{8.2.3 机器人轮廓模型与安全距离}
+
+代价地图必须知道机器人占据的平面区域。圆形机器人可以使用\texttt{robot\_radius}近似；矩形或不规则底盘宜使用由顶点组成的\texttt{footprint}多边形。麦克纳姆轮机器人虽然可以横移，但横向运动不会缩小实体宽度，轮廓必须覆盖车体、车轮以及不可碰撞的突出部件。
+
+机器人是否碰撞不是只检查\texttt{base\_link}中心所在栅格，而应检查整个轮廓扫过的区域。安全裕量至少应考虑定位误差、控制跟踪误差、传感器盲区、制动距离和外形测量误差。可写成概念关系
+\begin{equation}
+  d_{\mathrm{safe}}
+  \ge d_{\mathrm{localization}}+d_{\mathrm{tracking}}+d_{\mathrm{braking}}+d_{\mathrm{geometry}},
+  \label{eq:safety-margin}
+\end{equation}
+但各项不能凭经验随意相加后宣称已满足安全认证；教材中的参数只用于教学调试，真实设备应通过受控试验确定。
+
+轮廓顶点顺序、单位或坐标系错误会造成明显异常。若机器人在空旷区也报告碰撞，应检查轮廓是否自交、尺寸是否误用毫米、\texttt{base\_link}是否位于预期几何位置。若转弯安全但横移刮碰，则应重点检查左右边界是否被圆形半径过度简化，以及局部控制器是否真正采样了$y$方向速度。
+
+\subsection*{观察与诊断}
+
+建议分别关闭和开启静态层、障碍层与膨胀层，记录代价地图变化及路径变化。预期证据包括：静态障碍与地图一致；临时障碍进入传感器范围后被标记；障碍移除后自由空间能够清除；机器人轮廓与实物外形方向一致。该过程在当前Windows环境仅完成源码与配置静态审查。
+
+\begin{thebibliography}{9}
+\bibitem{macenski2020nav2} Macenski, S., Martín, F., White, R., Clavero, J. \emph{The Marathon 2: A Navigation System}. IROS, 2020.
+\bibitem{macenski2023survey} Macenski, S., Moore, T., Lu, D. V., Merzlyakov, A., Ferguson, M. A survey of modern and capable mobile robotics algorithms in ROS~2. \emph{Robotics and Autonomous Systems}, 2023.
+\bibitem{navigation2source} Open Navigation LLC and contributors. \emph{Navigation2 source tree}: \texttt{nav2\_costmap\_2d} and \texttt{nav2\_bringup/params/nav2\_params.yaml}, local version 1.4.0, static inspection, 2026-08-09.
+\end{thebibliography}
+\end{document}

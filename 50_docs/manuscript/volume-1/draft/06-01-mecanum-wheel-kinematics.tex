@@ -1,0 +1,351 @@
+% !TeX program = xelatex
+% 分册：第二册《应用篇：建模、感知、规划与控制》
+% 章节：第6章 6.1节 麦克纳姆轮运动学
+% 内容状态：理论推导初稿，已完成静态审查，尚未进行 LaTeX 编译和实物平台验证。
+% 主要参考：A. Gfrerrer, Geometry and kinematics of the Mecanum wheel, 2008.
+
+\documentclass[UTF8,zihao=-4]{ctexart}
+
+\usepackage{amsmath,amssymb,bm}
+\usepackage{booktabs}
+\usepackage{geometry}
+\usepackage{hyperref}
+\usepackage{siunitx}
+
+\geometry{a4paper,left=28mm,right=28mm,top=25mm,bottom=25mm}
+\hypersetup{colorlinks=true,linkcolor=blue,citecolor=blue,urlcolor=blue}
+\sisetup{per-mode=symbol}
+
+\newcommand{\vect}[1]{\bm{#1}}
+
+\title{第6章移动机器人的局部位姿估计\\
+\large 6.1 麦克纳姆轮运动学}
+\author{}
+\date{}
+
+\begin{document}
+
+\maketitle
+
+\begin{table}[htbp]
+  \centering
+  \caption*{教学与编写信息}
+  \begin{tabular}{p{0.22\textwidth}p{0.68\textwidth}}
+    \toprule
+    项目 & 内容 \\
+    \midrule
+    所属教材 & 第二册《机器人操作系统与智能机器人开发——应用篇：建模、感知、规划与控制》 \\
+    章节位置 & 第6章“移动机器人的局部位姿估计”第6.1节 \\
+    建议对象 & 已学习机器人学、自动控制、Python及ROS基础的本科生或研究生 \\
+    建议学时 & 1学时理论讲解；计算、观察与诊断任务作为课内选做或课外拓展 \\
+    技术属性 & 共同概念；运动学公式不依赖ROS版本，接口实现以ROS~2 Humble为后续主线 \\
+    智能闭环作用 & 连接执行与反馈：把底盘速度转换为轮速，并由编码器轮速反求运动状态 \\
+    内容状态 & 理论推导初稿；静态审查完成，LaTeX编译和教学实物验证待完成 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\subsection*{学习目标}
+
+完成本节后，学生能够：
+\begin{enumerate}
+  \item \textbf{K（知识与理解）：}说明麦克纳姆轮滚子布置产生全向运动能力的基本原因，区分纵向、横向和旋转运动；
+  \item \textbf{A（分析与诊断）：}根据统一坐标系和车轮编号分析轮速符号，定位横移方向错误、旋转异常和参数偏差；
+  \item \textbf{T（工具与实现）：}使用正、逆运动学矩阵完成底盘速度与四轮角速度之间的转换，并为后续里程计实现准备速度量；
+  \item \textbf{L（自主学习与迁移）：}识别不同论文、驱动器或机器人平台在坐标轴、滚子布置和电机正方向上的约定差异。
+\end{enumerate}
+
+\subsection*{先修知识}
+
+\begin{itemize}
+  \item 平面刚体运动、角速度、矩阵乘法和右手坐标系；
+  \item 第2章的坐标系与旋转变换基础；
+  \item 第5章的麦克纳姆轮底盘控制、速度指令和硬件反馈链路；
+  \item 了解编码器可以测量车轮转角或角速度，但不直接测量轮地打滑。
+\end{itemize}
+
+\subsection*{关键词}
+
+\begin{table}[htbp]
+  \centering
+  \caption*{本节关键词}
+  \begin{tabular}{lll}
+    \toprule
+    中文名称 & English term & 缩写或符号 \\
+    \midrule
+    麦克纳姆轮 & Mecanum wheel & --- \\
+    全向运动能力 & omnidirectional mobility & --- \\
+    正运动学 & forward kinematics & --- \\
+    逆运动学 & inverse kinematics & --- \\
+    里程计 & odometry & odom \\
+    惯性测量单元 & Inertial Measurement Unit & IMU \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\subsection*{问题情境与学习路径}
+
+当移动机器人只接收到“向左横移”的底盘速度指令时，四个电机并不会获得相同的目标转速。如果车轮编号、滚子方向或电机符号配置错误，机器人可能向右移动、斜向移动，甚至发生旋转。另一方面，即使四个编码器都准确报告轮速，轮地打滑仍可能使计算位移偏离真实位移。本节围绕两个可观察问题展开：如何把期望底盘运动分配到四个车轮，以及如何从四轮反馈恢复底盘运动状态。
+
+学习过程遵循“现象与约定---运动分解---矩阵转换---观察诊断---误差反思”的递进关系。前半部分服务第5章执行控制，后半部分为本章轮式里程计和多传感器融合建立运动模型。
+
+\section*{6.1 麦克纳姆轮运动学}
+
+\paragraph{常用机器人底盘轮型对比。}
+
+机器人底盘的轮子是其运动系统的核心部件。轮子的选择直接影响机器人的运动方式、地形适应性、承载能力及控制复杂度。常用机器人底盘轮型分类如下：
+\begin{itemize}
+  \item \textbf{普通驱动轮：}结构简单、承载和传动效率较高，常用于差速或四轮驱动底盘，但不能直接产生横向运动。
+  \item \textbf{万向脚轮：}可绕竖直轴被动转向，通常作为差速底盘的辅助支撑轮；换向时可能出现摆动和附加阻力。
+  \item \textbf{全向轮：}轮缘带有被动滚子，多个全向轮按不同角度组合后可实现平面全向运动，但容易受到振动和地面缝隙影响。
+  \item \textbf{麦克纳姆轮：}滚子相对主轮平面倾斜布置，四轮协调转动可产生纵向、横向和旋转运动；其横向精度较易受到打滑、载荷和安装方向影响。
+\end{itemize}
+
+本教材采用麦克纳姆轮底盘，主要是为了在有限空间内演示三个平面速度自由度，并进一步研究轮速分配、编码器里程计和多传感器融合。实际工程选型仍需综合考虑载荷、地面、越障、能耗和成本。
+
+普通轮式机器人通常需要改变车体朝向，才能改变平移方向。麦克纳姆轮（Mecanum wheel）在轮缘周围布置若干可自由转动的滚子，滚子轴线相对车轮主平面倾斜。车轮主动转动时，轮地接触处的作用可以分解为沿车轮滚动方向和沿滚子允许方向的分量。四个车轮采用适当的滚子方向组合后，各轮速度分量能够叠加成车体的纵向运动、横向运动和绕竖直轴的旋转运动。因此，底盘不必先转向，就能在平面内改变平移方向。
+C:\Users\32839\Desktop\ROS教材\navigation2-main
+本节不展开滚子曲面的制造几何，而是把滚子视为理想的无动力滚动元件，在平面、低速且无打滑的条件下建立四轮底盘模型。该模型用于解释轮速分配和编码器里程计；真实机器人上的滚子变形、接触切换和地面打滑将在后文作为误差来源处理。
+
+\subsection*{6.1.1 底盘坐标C:\Users\32839\Desktop\ROS教材\navigation2-main系与车轮编号}
+
+在底盘几何中心建立右手坐标系 $\{B\}$：$x_B$ 轴指向机器人前方，$y_B$ 轴指向机器人左方，$z_B$ 轴竖直向上。规定绕 $z_B$ 轴逆时针旋转为正。底盘在自身坐标系中的速度记为
+\begin{equation}
+  \vect{v}_B =
+  \begin{bmatrix}
+    v_x & v_y & \omega_z
+  \end{bmatrix}^{\mathrm T},
+  \label{eq:body-velocity}
+\end{equation}
+其中，$v_x$ 为纵向速度，$v_y$ 为横向速度，$\omega_z$ 为偏航角速度。
+
+四个车轮按机器人前进方向观察进行编号，如表~\ref{tab:wheel-numbering}所示。设车轮半径为 $r$，车体中心到前、后轮轴线的纵向距离为 $l_x$，到左、右车轮中心面的横向距离为 $l_y$，并定义
+\begin{equation}
+  L = l_x + l_y.
+  \label{eq:lever-arm}
+\end{equation}
+
+\begin{table}[htbp]
+  \centering
+  \caption{四个麦克纳姆轮的编号与位置}
+  \label{tab:wheel-numbering}
+  \begin{tabular}{clc}
+    \toprule
+    编号 & 位置 & 轮心坐标 $(x_i,y_i)$ \\
+    \midrule
+    1 & 左前轮（front left, FL）  & $(+l_x,+l_y)$ \\
+    2 & 右前轮（front right, FR） & $(+l_x,-l_y)$ \\
+    3 & 左后轮（rear left, RL）   & $(-l_x,+l_y)$ \\
+    4 & 右后轮（rear right, RR）  & $(-l_x,-l_y)$ \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+本节采用常见的X形滚子布置。俯视底盘时，四个滚子的受力方向整体呈“X”形。规定各轮角速度 $\omega_i$ 为正时，该车轮单独产生的主滚动趋势指向车体前方。不同厂商可能采用不同的车轮编号、电机安装方向和编码器符号，因此公式使用前必须同时核对以下四项：
+\begin{enumerate}
+  \item $x_B$、$y_B$ 和 $z_B$ 的正方向；
+  \item 四个车轮的物理位置与编号；
+  \item 左旋轮和右旋轮的安装位置；
+  \item 电机正转与编码器计数增加的对应关系。
+\end{enumerate}
+
+只要其中一项与本节约定不同，横移或旋转项的符号就可能改变。工程实现时应先通过低速架空测试确认单轮正方向，再进行落地运动测试，不能仅凭导线颜色或电机标签判断符号。
+
+\subsection*{6.1.2 纵向、横向与旋转运动分解}
+
+在理想约束下，四轮速度的不同组合形成三种基本运动。表~\ref{tab:basic-motion}只表示轮速符号，不表示具体大小。
+
+\begin{table}[htbp]
+  \centering
+  \caption{X形布置下的基本运动与轮速符号}
+  \label{tab:basic-motion}
+  \begin{tabular}{lcccc}
+    \toprule
+    期望运动 & $\omega_1$（FL） & $\omega_2$（FR） & $\omega_3$（RL） & $\omega_4$（RR） \\
+    \midrule
+    向前，$v_x>0$       & $+$ & $+$ & $+$ & $+$ \\
+    向左，$v_y>0$       & $-$ & $+$ & $+$ & $-$ \\
+    逆时针，$\omega_z>0$ & $-$ & $+$ & $-$ & $+$ \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+向前运动时，四轮主滚动分量同向，横向分量相互抵消；向左横移时，两条对角线上的车轮分别同向，纵向分量相互抵消而横向分量叠加；原地逆时针旋转时，左侧车轮趋向后退、右侧车轮趋向前进，四轮共同产生绕车体中心的正向角速度。
+
+一般运动是上述三种基本运动的线性叠加。例如，$v_x>0$、$v_y>0$ 且 $\omega_z=0$ 时，机器人沿左前方平移；若同时令 $\omega_z\neq0$，机器人可在平移过程中改变朝向。这种在平面内独立生成 $v_x$、$v_y$ 和 $\omega_z$ 的能力称为全向运动能力（omnidirectional mobility）。这里的“独立”是运动学模型中的结论，并不意味着三个方向具有完全相同的动力学性能。受滚子接触、摩擦和载荷分配影响，实物底盘的横向速度精度通常需要单独标定。
+
+\subsection*{6.1.3 四轮轮速与底盘速度的相互转换}
+
+\subsubsection*{6.1.3.1 逆运动学：由底盘速度计算车轮速度}
+
+控制器已知期望底盘速度 $\vect{v}_B$ 时，需要计算四个车轮的目标角速度。按照本节的坐标系、编号和X形滚子布置，逆运动学可写为
+\begin{equation}
+  \begin{bmatrix}
+    \omega_1\\
+    \omega_2\\
+    \omega_3\\
+    \omega_4
+  \end{bmatrix}
+  =
+  \frac{1}{r}
+  \begin{bmatrix}
+    1 & -1 & -L\\
+    1 &  1 &  L\\
+    1 &  1 & -L\\
+    1 & -1 &  L
+  \end{bmatrix}
+  \begin{bmatrix}
+    v_x\\
+    v_y\\
+    \omega_z
+  \end{bmatrix}.
+  \label{eq:inverse-kinematics}
+\end{equation}
+
+式~\eqref{eq:inverse-kinematics}中的三列分别对应纵向、横向和旋转贡献。以左前轮为例，
+\begin{equation}
+  \omega_1=\frac{v_x-v_y-L\omega_z}{r}.
+\end{equation}
+因此，向前运动增加左前轮正转速度，向左运动和逆时针旋转则对左前轮产生负向贡献。其余三个车轮的目标速度由相同的叠加关系得到。
+
+若计算结果超过电机允许的最大角速度 $\omega_{\max}$，不能逐轮独立截断，否则会改变四轮之间的比例并使实际运动方向偏离期望方向。可计算
+\begin{equation}
+  s=\max\left(1,\frac{\max_i|\omega_i|}{\omega_{\max}}\right),
+  \qquad
+  \omega_i^{\mathrm{cmd}}=\frac{\omega_i}{s},
+  \label{eq:wheel-normalization}
+\end{equation}
+对四轮进行等比例缩放。这样虽然降低了底盘速度幅值，但保留了理想运动学中的速度方向和各分量比例。
+
+\subsubsection*{6.1.3.2 正运动学：由车轮速度估计底盘速度}
+
+编码器测得四轮角速度后，可由正运动学估计底盘速度：
+\begin{equation}
+  \begin{bmatrix}
+    v_x\\
+    v_y\\
+    \omega_z
+  \end{bmatrix}
+  =
+  \frac{r}{4}
+  \begin{bmatrix}
+    1 & 1 & 1 & 1\\
+   -1 & 1 & 1 &-1\\
+   -\dfrac{1}{L} & \dfrac{1}{L} & -\dfrac{1}{L} & \dfrac{1}{L}
+  \end{bmatrix}
+  \begin{bmatrix}
+    \omega_1\\
+    \omega_2\\
+    \omega_3\\
+    \omega_4
+  \end{bmatrix}.
+  \label{eq:forward-kinematics}
+\end{equation}
+
+由式~\eqref{eq:forward-kinematics}可以得到三个直接的检查条件：四轮同速同向时应只有 $v_x$；轮速模式为 $[-,+,+,-]$ 时应只有正 $v_y$；轮速模式为 $[-,+,-,+]$ 时应只有正 $\omega_z$。这三个条件既能检查数学推导，也能用于检查软件中的车轮索引和符号映射。
+
+设机器人在里程计坐标系中的平面位姿为
+\begin{equation}
+  \vect{q}=
+  \begin{bmatrix}
+    x & y & \theta
+  \end{bmatrix}^{\mathrm T},
+\end{equation}
+其中 $\theta$ 为底盘航向角。式~\eqref{eq:forward-kinematics}得到的是底盘坐标系速度，需要通过旋转变换转换到里程计坐标系：
+\begin{equation}
+  \begin{bmatrix}
+    \dot{x}\\
+    \dot{y}\\
+    \dot{\theta}
+  \end{bmatrix}
+  =
+  \begin{bmatrix}
+    \cos\theta & -\sin\theta & 0\\
+    \sin\theta &  \cos\theta & 0\\
+    0           &  0           & 1
+  \end{bmatrix}
+  \begin{bmatrix}
+    v_x\\
+    v_y\\
+    \omega_z
+  \end{bmatrix}.
+  \label{eq:world-velocity}
+\end{equation}
+
+在采样周期 $\Delta t$ 较小时，可使用一阶离散积分：
+\begin{align}
+  x_{k+1} &= x_k + (v_{x,k}\cos\theta_k-v_{y,k}\sin\theta_k)\Delta t,\\
+  y_{k+1} &= y_k + (v_{x,k}\sin\theta_k+v_{y,k}\cos\theta_k)\Delta t,\\
+  \theta_{k+1} &= \theta_k + \omega_{z,k}\Delta t.
+  \label{eq:odometry-integration}
+\end{align}
+该积分结果构成轮式里程计的基础。它依赖“纯滚动、轮径准确、几何尺寸准确和采样时间正确”等假设。任一假设持续偏离，误差都会随积分累积。因此，轮式里程计提供的是状态估计而非位置真值，后续需要结合惯性测量单元（Inertial Measurement Unit，IMU）等传感器进行融合。
+
+\subsubsection*{6.1.3.3 参数与误差的工程含义}
+
+车轮半径 $r$ 决定轮速与线速度之间的比例。若实际有效半径大于程序中的设定值，机器人实际行驶距离会大于里程计估计距离。参数 $L=l_x+l_y$ 影响角速度估计；若该值不准确，原地旋转时的航向误差会比较明显。对于麦克纳姆轮，名义轮径不一定等于负载条件下的有效滚动半径，滚子与地面接触的周期变化也会引入速度波动。
+
+横向运动通常比纵向运动更容易发生滑动。编码器只测量电机轴或车轮的转动，无法直接判断轮地接触处是否打滑。因此，即使四个编码器完全符合式~\eqref{eq:inverse-kinematics}的目标模式，机器人也可能没有产生相同幅值的横向位移。后续融合IMU或外部定位信息时，应通过测量协方差表达不同数据源的不确定性，而不是把所有测量视为同等可靠。
+
+\subsection*{观察与诊断}
+
+在接入完整里程计节点前，可按“单轮---基本运动---组合运动”的顺序检查运动学映射。
+
+\begin{enumerate}
+  \item 架空底盘，以相同的小正速度依次驱动四个车轮，核对实际转向与编码器符号。
+  \item 落地后只给定 $v_x>0$，检查四轮是否同向、机器人是否近似直行。
+  \item 只给定 $v_y>0$，检查轮速是否呈 $[-,+,+,-]$，并观察机器人是否向左横移。
+  \item 只给定 $\omega_z>0$，检查轮速是否呈 $[-,+,-,+]$，并观察机器人是否逆时针旋转。
+  \item 同时记录目标轮速、编码器轮速和外部测得的位移，不把“车轮在转”作为底盘速度正确的充分证据。
+\end{enumerate}
+
+\begin{table}[htbp]
+  \centering
+  \caption{麦克纳姆轮运动学的典型故障诊断}
+  \label{tab:mecanum-diagnostics}
+  \begin{tabular}{p{0.27\textwidth}p{0.31\textwidth}p{0.32\textwidth}}
+    \toprule
+    现象 & 可能原因 & 检查方向 \\
+    \midrule
+    给定前进指令却发生旋转 & 左右轮编码器或电机符号不一致 & 逐轮检查正转定义和软件索引 \\
+    给定横移指令却前后运动 & 滚子布置与矩阵约定不一致 & 核对X形布置、车轮型号和安装位置 \\
+    直行正常但旋转角度偏差大 & $L$或有效轮径不准确 & 进行多圈低速旋转并标定几何参数 \\
+    横移距离严重偏小 & 滚子打滑、地面摩擦或载荷不均 & 比较编码器位移和外部位置测量 \\
+    里程计短时跳变 & 编码器计数溢出、采样周期异常或轮速单位错误 & 检查原始计数、时间戳及\si{rad/s}换算 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\subsection*{本节小结}
+
+麦克纳姆轮底盘通过四个车轮的速度叠加，在平面内产生纵向速度、横向速度和偏航角速度。本节在统一坐标系、车轮编号和滚子布置的基础上，建立了底盘速度到四轮角速度的逆运动学，以及四轮编码器速度到底盘速度的正运动学。公式不仅用于控制器的轮速分配，也是轮式里程计的起点。理想运动学无法描述打滑、滚子变形和参数误差，因此由编码器积分得到的位姿只能作为估计值；这正是后续引入IMU和多传感器融合的原因。
+
+\subsection*{思考与练习}
+
+\begin{enumerate}
+  \item 已知 $r=\SI{0.05}{m}$、$l_x=\SI{0.18}{m}$、$l_y=\SI{0.16}{m}$，计算底盘以 $v_x=\SI{0.4}{m/s}$、$v_y=\SI{0.2}{m/s}$、$\omega_z=\SI{0.5}{rad/s}$ 运动时的四轮目标角速度。
+  \item 证明式~\eqref{eq:forward-kinematics}是式~\eqref{eq:inverse-kinematics}在本节理想模型下的左逆，并解释为什么四个轮速观测对三维底盘速度形成冗余信息。
+  \item 某机器人执行向左横移命令时实际向右运动，但前进和旋转方向均正确。分析最可能出错的符号或坐标约定，并设计最小诊断步骤。
+  \item 设计一个轮径和旋转几何参数 $L$ 的标定实验。说明需要记录哪些数据，以及如何避免只用一次实验得出结论。
+\end{enumerate}
+
+\subsection*{参考资料与编写状态}
+
+下列论文为本节运动学内容的主要参考来源。正文和公式已根据本教材统一的坐标系、车轮编号与教学目标重新组织，未直接复制论文插图。项目根目录中的PDF仅作为本地参考材料，其再分发权利应在教材发布前另行核查。
+
+\begin{thebibliography}{9}
+
+\bibitem{gfrerrer2008}
+Gfrerrer, A.
+Geometry and kinematics of the Mecanum wheel.
+\emph{Computer Aided Geometric Design}, 2008, 25(9): 784--791.
+\href{https://doi.org/10.1016/j.cagd.2008.07.008}{doi:10.1016/j.cagd.2008.07.008}.
+
+\end{thebibliography}
+
+\noindent
+\textbf{已完成：}教学结构、坐标约定、正逆运动学推导、误差讨论、观察诊断、分层练习与双语任务。\\
+\textbf{待验证：}XeLaTeX编译；教学平台的车轮编号、滚子安装、电机方向、编码器符号、有效轮径和几何参数。\\
+\textbf{发布前检查：}核对参考论文PDF的保存与再分发许可；补充原创底盘示意图后标明作者和许可。
+
+\end{document}

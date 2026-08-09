@@ -1,0 +1,74 @@
+% !TeX program = xelatex
+% 章节：第8章 8.5节 动态避障与恢复行为
+% 验证状态：理论与本地Navigation2源码静态审查完成；运行与安全验证待完成。
+\documentclass[UTF8,zihao=-4]{ctexart}
+\usepackage{amsmath,amssymb,booktabs,geometry,hyperref}
+\geometry{a4paper,left=28mm,right=28mm,top=25mm,bottom=25mm}
+\hypersetup{colorlinks=true,linkcolor=blue,citecolor=blue,urlcolor=blue}
+\title{第8章自主导航与任务执行\\\large 8.5 动态避障与恢复行为}
+\author{}\date{}
+\begin{document}\maketitle
+
+\noindent\textbf{教学定位：}动态避障负责在任务仍可完成时调整运动，恢复行为负责在规划或控制受阻后尝试恢复可执行条件。两者都不能替代急停和安全认证系统。本节围绕“感知更新---局部响应---必要时重规划---受控恢复---失败退出”展开。
+
+\section*{8.5 动态避障与恢复行为}
+
+\subsection*{8.5.1 动态障碍物感知与局部代价地图实时更新}
+
+动态障碍物首先以激光扫描、点云或距离数据进入障碍层或体素层。传感器观测经TF变换到局部代价地图坐标系后，用于标记新障碍和清除已确认的自由空间。局部控制器随后在更新后的代价地图上重新评价候选轨迹。该过程的关键不是“是否收到传感器Topic”，而是数据时间戳、坐标变换、观测范围、标记与清除选项以及更新频率是否共同有效。
+
+从采样到控制响应的总延迟可概括为
+\begin{equation}
+  T_{\mathrm{response}}=
+  T_{\mathrm{sensor}}+T_{\mathrm{transport}}+T_{\mathrm{TF}}+
+  T_{\mathrm{costmap}}+T_{\mathrm{control}}+T_{\mathrm{actuator}}.
+  \label{eq:obstacle-response-delay}
+\end{equation}
+即使局部代价地图更新频率很高，只要传感器时间戳滞后或底盘制动慢，机器人仍可能无法及时停车。动态障碍的未来运动通常具有不确定性；基础代价地图主要反映当前和近期观测，不能把一次观测直接当作准确轨迹预测。
+
+调试时可让障碍物缓慢进入和离开传感器视野，观察障碍是否及时标记、离开后是否被清除、机器人是否产生绕行或减速。若障碍长期残留，检查清除射线和最大范围；若障碍闪烁，检查丢帧、时间同步、最小点数与传感器噪声；若代价地图正确而机器人仍碰撞，则检查控制预测时间、轮廓和制动能力。
+
+\subsection*{8.5.2 减速、停车与重新规划}
+
+面对动态障碍，系统可按风险逐级响应：局部控制器先选择更安全的速度或轨迹；没有安全轨迹时输出零速度；障碍持续阻塞全局路径时重新规划；若规划与控制反复失败，再由行为树决定是否恢复或终止任务。减速、停车和重新规划不是互斥动作，而是由不同时间尺度和模块共同实现。
+
+安全停车距离至少受当前速度$v$、等效减速度$a_b$和系统延迟$T_d$影响，可用简化关系
+\begin{equation}
+  d_{\mathrm{stop}}\approx vT_d+\frac{v^2}{2a_b}+d_{\mathrm{margin}}
+  \label{eq:stopping-distance}
+\end{equation}
+建立调参直觉。该式忽略轮地附着变化和控制器细节，只能用于教学估算，不能作为安全认证依据。麦克纳姆轮纵向与横向制动能力可能不同，应分别测试$v_x$和$v_y$方向。
+
+Nav2的Collision Monitor可作为速度指令链上的附加软件保护层，利用传感器数据和停止、减速或接近区域限制\texttt{cmd\_vel}。它通常绕过代价地图以缩短反应链，但本地源码明确说明该CPU级节点不等于安全认证硬件\cite{navigation2source}。教学系统仍应保留底层急停、通信超时停车和人工安全边界。
+
+\subsection*{8.5.3 恢复行为及失败处理：清除代价地图、后退与等待}
+
+恢复行为的目标是改变导致失败的局部条件，而不是掩盖所有错误。恢复可分为规划器或控制器子树中的上下文恢复，以及处理系统级故障的通用恢复，避免每个错误都触发相同动作\cite{macenski2020nav2}。默认行为树先执行与规划器或控制器错误相关的局部恢复，再在顶层轮流尝试清除代价地图、旋转、等待和后退\cite{navigation2source}。
+
+\begin{table}[htbp]
+  \centering
+  \caption{常见恢复行为的适用条件与风险}
+  \begin{tabular}{p{0.18\textwidth}p{0.34\textwidth}p{0.36\textwidth}}
+    \toprule
+    行为 & 适用现象 & 不适用情况或风险 \\
+    \midrule
+    清除代价地图 & 传感器瞬态噪声或过期障碍导致错误占用 & 真实障碍仍存在；反复清图可能导致短暂忽略风险 \\
+    旋转 & 需要扩大传感器视野或改变局部姿态 & 狭窄区、非圆形轮廓或周围有人时可能碰撞 \\
+    等待 & 行人等临时障碍可能自行离开 & 永久封路时只会浪费时间 \\
+    后退 & 前方局部受困且后方已确认安全 & 后方盲区、坡道或狭窄区域不能盲目执行 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+恢复前应根据错误码判断该行为是否可能有效。例如TF断链、定位丢失和控制器插件加载失败通常不能靠清图解决。恢复动作必须设置距离、速度、时间和碰撞检查边界；达到最大重试次数后应返回明确失败、停止速度输出并保留日志。无限重试既不自主，也不安全。
+
+\subsection*{观察与诊断}
+
+建议设置三种可控情境：短时横穿障碍、持续封路和虚假障碍残留。分别记录局部代价地图、速度、重规划次数、恢复行为与最终Action结果。测试恢复动作前必须清空机器人周围区域并准备人工急停。本节未在实物上执行，安全距离和速度参数均待验证。
+
+\begin{thebibliography}{9}
+\bibitem{macenski2020nav2} Macenski, S., Martín, F., White, R., Clavero, J. \emph{The Marathon 2: A Navigation System}. IROS, 2020.
+\bibitem{macenski2023survey} Macenski, S., Moore, T., Lu, D. V., Merzlyakov, A., Ferguson, M. A survey of modern and capable mobile robotics algorithms in ROS~2. \emph{Robotics and Autonomous Systems}, 2023.
+\bibitem{navigation2source} Open Navigation LLC and contributors. \emph{Navigation2 source tree}: \texttt{nav2\_behaviors}, \texttt{nav2\_collision\_monitor}, default behavior trees and parameters, local version 1.4.0, static inspection, 2026-08-09.
+\end{thebibliography}
+\end{document}

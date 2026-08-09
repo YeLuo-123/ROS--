@@ -1,0 +1,86 @@
+% !TeX program = xelatex
+% 分册：第二册《应用篇：建模、感知、规划与控制》
+% 章节：第8章 8.1节 Nav2导航系统概述
+% 验证状态：依据本地Navigation2源码完成静态审查；ROS 2 Humble运行待验证。
+
+\documentclass[UTF8,zihao=-4]{ctexart}
+\usepackage{amsmath,amssymb,bm,booktabs,geometry,hyperref,enumitem}
+\geometry{a4paper,left=28mm,right=28mm,top=25mm,bottom=25mm}
+\hypersetup{colorlinks=true,linkcolor=blue,citecolor=blue,urlcolor=blue}
+\title{第8章自主导航与任务执行\\\large 8.1 Nav2导航系统概述}
+\author{}
+\date{}
+
+\begin{document}
+\maketitle
+
+\noindent\textbf{教学定位：}本节面向已完成地图、AMCL定位和局部里程计学习的学生，建立Nav2从任务目标到速度指令的系统视图。共同概念适用于ROS~2，教学环境以Ubuntu~22.04与ROS~2 Humble为主；本地\texttt{navigation2-main}为1.4.0主分支源码，只用于静态分析，不能等同于Humble运行结果。
+
+\section*{8.1 Nav2导航系统概述}
+
+Nav2以可靠、模块化和可重配置为主要设计目标，并通过插件与行为树支持功能扩展\cite{macenski2020nav2}。系统采用多个任务服务器、生命周期管理、插件接口和行为树，而不是构造一个不可拆分的导航节点，使规划、控制和恢复功能可以独立配置与替换。
+
+\subsection*{8.1.1 自主导航数据流与计算图}
+
+自主导航不是“调用一个寻路函数”，而是定位、环境表示、路径规划、运动控制和任务管理共同形成的闭环。机器人接收目标位姿后，系统首先利用\texttt{map}$\rightarrow$\texttt{odom}$\rightarrow$\texttt{base\_link}坐标变换获得当前全局位姿；全局规划器在全局代价地图上生成路径；控制器结合局部代价地图和里程计计算速度指令；机器人运动后的新位姿与新传感器数据再次进入定位和代价地图，形成持续反馈。
+
+核心数据流可概括为
+\begin{equation}
+  \text{目标位姿}
+  \rightarrow \text{全局路径}
+  \rightarrow \text{局部轨迹或控制量}
+  \rightarrow \text{速度指令}
+  \rightarrow \text{机器人运动与状态反馈}.
+  \label{eq:nav2-data-flow}
+\end{equation}
+其中，地图和定位为规划提供空间参照，传感器观测更新障碍物信息，行为树决定何时规划、跟踪、重试或执行恢复。任何一条数据链中断都可能表现为“导航失败”：例如TF不完整会使目标无法变换，定位错误会使路径起点错误，局部代价地图无障碍物数据会使控制器失去避障依据。
+
+从源码职责看，\texttt{planner\_server}通过规划器插件生成路径，\texttt{controller\_server}通过控制器插件产生速度命令，\texttt{bt\_navigator}组织完整任务，\texttt{behavior\_server}执行旋转、后退和等待等行为，\texttt{waypoint\_follower}组织航点任务，两个代价地图分别服务全局规划和局部控制\cite{navigation2source,macenski2020nav2}。这种“联邦式服务器＋统一任务编排”的结构把算法故障限制在相应模块，也允许在不重写整个系统的情况下替换插件；但插件化不会消除接口、坐标系和时序约束。
+
+\subsection*{8.1.2 Nav2核心节点与生命周期管理}
+
+Nav2的核心服务器不是必须一次性写死在单个节点中，而是通过统一接口加载规划器、控制器、目标检查器、进度检查器和恢复行为等插件。表~\ref{tab:nav2-core-servers}给出本章涉及的主要组件。
+
+\begin{table}[htbp]
+  \centering
+  \caption{Nav2核心服务器及其职责}
+  \label{tab:nav2-core-servers}
+  \begin{tabular}{p{0.25\textwidth}p{0.62\textwidth}}
+    \toprule
+    组件 & 主要职责 \\
+    \midrule
+    \texttt{bt\_navigator} & 接收导航Action目标，加载并执行行为树，协调规划、控制与恢复 \\
+    \texttt{planner\_server} & 根据起点、目标和全局代价地图调用规划器插件生成路径 \\
+    \texttt{controller\_server} & 跟踪路径，结合局部代价地图产生速度命令，并检查进度和到达条件 \\
+    \texttt{smoother\_server} & 在需要时平滑路径，改善曲率或可执行性 \\
+    \texttt{behavior\_server} & 加载旋转、后退、直行、等待等行为插件 \\
+    \texttt{waypoint\_follower} & 顺序处理航点，并可在航点执行等待等任务插件 \\
+    \texttt{lifecycle\_manager} & 按依赖顺序配置、激活、停用、清理或关闭受管节点 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+Nav2大量使用生命周期节点（lifecycle node）。节点创建后不立即处理导航任务，而是经历\texttt{unconfigured}、\texttt{inactive}、\texttt{active}和\texttt{finalized}等状态。配置阶段读取参数并创建资源，激活阶段才开始对外提供有效服务。\texttt{nav2\_lifecycle\_manager}按照\texttt{node\_names}指定的顺序调用受管节点的生命周期服务，启动时顺序激活，关闭时逆序处理\cite{navigation2source}。
+
+因此，“进程存在”不等于“导航服务器可用”。若节点已启动但Action不可用，应依次检查：节点是否被生命周期管理器列入；是否成功完成配置；所需插件是否加载；依赖的TF、地图和传感器是否就绪。源码中的\texttt{on\_configure()}、\texttt{on\_activate()}和\texttt{on\_cleanup()}等回调正是这一管理模式的实现入口。
+
+\subsection*{8.1.3 \texttt{NavigateToPose} Action任务接口}
+
+导航到单一目标位姿是一个持续时间不确定、需要反馈并允许取消的任务，因此Nav2使用Action而不是普通Topic或Service。\texttt{NavigateToPose}的目标至少包含带时间戳和坐标系的\texttt{pose}，还可以指定本次任务使用的行为树文件；服务器持续反馈当前位姿、已用导航时间、预计剩余时间、恢复次数和剩余距离，任务结束后返回成功、取消或错误结果\cite{navigation2source}。
+
+调用方必须明确目标位姿所在坐标系。通常目标使用\texttt{map}，若误用\texttt{base\_link}或时间戳对应的TF已过期，任务可能在接受前后因坐标变换失败而终止。Action被接受也不表示机器人一定能到达：规划器可能找不到路径，控制器可能无法取得进展，定位或传感器也可能在运行中失效。
+
+本地1.4.0源码的Action定义包含\texttt{error\_code}、\texttt{error\_msg}和\texttt{tracking\_error}等字段；Humble安装包的字段必须以目标系统中的\texttt{ros2 interface show nav2\_msgs/action/NavigateToPose}为准。教学观察可记录以下证据：目标是否被接受、反馈中的剩余距离是否总体下降、恢复次数是否增加、取消后速度是否归零，以及结果错误码能否与日志对应。
+
+\subsection*{观察与诊断}
+
+在Ubuntu~22.04与ROS~2 Humble环境中，建议先检查节点和生命周期状态，再观察Action接口。若目标发送后无运动，不要立即修改控制器参数；先确认\texttt{map}、\texttt{odom}和\texttt{base\_link}连通，定位有效，全局与局部代价地图正在更新，规划器与控制器均处于\texttt{active}状态。上述运行步骤尚未在当前Windows环境执行。
+
+\begin{thebibliography}{9}
+\bibitem{macenski2020nav2} Macenski, S., Martín, F., White, R., Clavero, J. \emph{The Marathon 2: A Navigation System}. IROS, 2020.
+\bibitem{macenski2023survey} Macenski, S., Moore, T., Lu, D. V., Merzlyakov, A., Ferguson, M. From the desks of ROS maintainers: A survey of modern and capable mobile robotics algorithms in ROS~2. \emph{Robotics and Autonomous Systems}, 2023.
+\bibitem{navigation2source} Open Navigation LLC and contributors. \emph{Navigation2 source tree}, local snapshot \texttt{navigation2-main}, package version 1.4.0, static inspection, 2026-08-09.
+\end{thebibliography}
+
+\noindent\textbf{编写状态：}正文与本地源码接口已完成静态核对；ROS~2 Humble接口差异、节点图和运行现象待Ubuntu环境验证。
+\end{document}

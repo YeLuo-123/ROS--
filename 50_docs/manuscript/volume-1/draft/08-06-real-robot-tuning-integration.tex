@@ -1,0 +1,101 @@
+% !TeX program = xelatex
+% 章节：第8章 8.6节 真实机器人导航调参与系统集成
+% 验证状态：教学方案草稿；所有实物参数与结果待验证。
+\documentclass[UTF8,zihao=-4]{ctexart}
+\usepackage{amsmath,amssymb,bm,booktabs,geometry,hyperref,siunitx}
+\geometry{a4paper,left=28mm,right=28mm,top=25mm,bottom=25mm}
+\hypersetup{colorlinks=true,linkcolor=blue,citecolor=blue,urlcolor=blue}
+\sisetup{per-mode=symbol}
+\title{第8章自主导航与任务执行\\\large 8.6 真实机器人导航调参与系统集成}
+\author{}\date{}
+\begin{document}\maketitle
+
+\noindent\textbf{教学定位：}本节不提供一组可直接复制到所有机器人的“最佳参数”，而是建立从仿真初值到实物证据的调参顺序。对象为麦克纳姆轮ROS~2教学机器人；具体传感器型号、最大速度、载荷和场地数据尚未确定，因此所有数值均需实物复测。
+
+\section*{8.6 真实机器人导航调参与系统集成}
+
+可靠的导航系统不仅依赖规划和控制算法，还需要生命周期管理、模块故障隔离、持续集成和系统测试\cite{macenski2020nav2}。因此，实物调参不应只保存一份最终YAML，还要记录软件版本、启动顺序、测试场景、异常退出和回归结果。参数变更若没有可复现实验，就不能证明系统可靠性得到提升。
+
+\subsection*{8.6.1 仿真参数向实物迁移与初始值设置}
+
+仿真可以验证接口和基本逻辑，但不能完整复现滚子接触、地面摩擦、通信延迟、传感器盲区、结构振动和电池状态。迁移时应把参数分成三类：可以直接继承的接口参数、需要测量后填写的物理参数、必须通过实验辨识的性能参数。
+
+\begin{table}[htbp]
+  \centering
+  \caption{仿真参数向实物迁移的分类}
+  \begin{tabular}{p{0.22\textwidth}p{0.30\textwidth}p{0.34\textwidth}}
+    \toprule
+    类别 & 示例 & 迁移方法 \\
+    \midrule
+    接口与结构 & Topic名称、坐标系名称、插件类型 & 核对驱动和Launch后继承，不凭仿真默认值猜测 \\
+    物理几何 & 轮廓、轮径、轮距、传感器安装位姿 & 实测、标定并记录单位与测量方法 \\
+    动态性能 & 最大速度、加速度、制动距离、控制频率 & 从保守低速开始，通过受控实验逐步提高 \\
+    感知质量 & 雷达范围、盲区、噪声、数据频率 & 静止和运动采样，检查时间戳、TF与异常值 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+首次上车前应独立验证：遥控方向与\texttt{base\_link}一致；里程计的前进、左移和逆时针旋转符号正确；\texttt{map}$\rightarrow$\texttt{odom}$\rightarrow$\texttt{base\_link}$\rightarrow$传感器坐标系连通；静态地图尺度正确；急停和通信超时停车有效。只有这些基础条件成立，导航调参才有意义。
+
+初始速度应显著低于硬件极限，并分别设置$v_x$、$v_y$和$\omega_z$。对麦克纳姆轮，横移速度与加速度通常需要单独测量，不能从纵向值复制。机器人轮廓和膨胀半径应先偏保守，待定位、控制和制动证据稳定后再逐步优化通行能力。
+
+\subsection*{8.6.2 定位、代价地图与控制器串级调参}
+
+导航模块相互耦合，但调试仍应遵循依赖顺序：
+\begin{enumerate}
+  \item \textbf{底盘与里程计：}验证速度指令、实际运动、轮速反馈和\texttt{odom}$\rightarrow$\texttt{base\_link}连续性；
+  \item \textbf{定位：}在不运行自主导航时验证AMCL收敛、激光与地图重合以及\texttt{map}$\rightarrow$\texttt{odom}稳定性；
+  \item \textbf{代价地图：}分别验证静态层、障碍层、清除和膨胀，不先追求路径效果；
+  \item \textbf{全局规划：}检查不同起终点的连通性、贴墙程度和重规划稳定性；
+  \item \textbf{局部控制：}低速调整速度采样、轨迹预测、评分权重、目标容差和进度检查；
+  \item \textbf{行为树与恢复：}最后验证重试、恢复、取消和失败退出。
+\end{enumerate}
+
+每轮实验只改变一个主要变量，并保存参数文件、rosbag2、目标点和结果。若同时改变定位噪声、膨胀半径和控制权重，即使结果改善也无法判断原因。参数调整应依据可观察量：路径是否贴墙、局部轨迹是否全部碰撞、速度是否饱和、定位是否跳变、恢复是否被频繁触发。
+
+串级调参还要求检查频率和延迟关系。传感器发布、定位、代价地图更新、控制器计算和底盘控制的频率不必完全相同，但上游数据必须在下游容许时间内保持新鲜。若控制器频率提高却大量使用旧传感器数据，只会更频繁地重复错误决策。
+
+\subsection*{8.6.3 导航性能评价：成功率、路径长度与任务时间}
+
+单次“成功到达”不足以评价导航性能。应在相同地图、目标集合、载荷和障碍条件下重复试验。到达成功率可定义为
+\begin{equation}
+  R_{\mathrm{success}}=\frac{N_{\mathrm{success}}}{N_{\mathrm{total}}}\times100\%.
+  \label{eq:navigation-success-rate}
+\end{equation}
+路径长度由连续位姿采样近似计算：
+\begin{equation}
+  L=\sum_{k=1}^{M}\sqrt{(x_k-x_{k-1})^2+(y_k-y_{k-1})^2}.
+  \label{eq:executed-path-length}
+\end{equation}
+任务时间从目标被接受到Action成功、失败或取消。还应记录终点位置误差、航向误差、最小障碍距离、恢复次数和失败类型。路径短并不一定更好：若以更小安全距离换取短路径，风险可能上升；任务时间短也可能来自过高速度和更剧烈制动。
+
+评价报告必须说明真值或参考数据来源。AMCL自身输出不能同时作为被评价结果和绝对真值。条件允许时可使用外部测量、标定地标或人工测距近似评价终点误差；若没有独立参考，只能报告内部一致性和任务结果，不应宣称绝对定位精度。
+
+\subsection*{8.6.4 典型故障：实物运动异常、地图/里程计/TF不一致、仿真成功而实物失败}
+
+\begin{table}[htbp]
+  \centering
+  \caption{真实机器人导航的典型故障链}
+  \begin{tabular}{p{0.24\textwidth}p{0.29\textwidth}p{0.35\textwidth}}
+    \toprule
+    现象 & 优先假设 & 检查顺序 \\
+    \midrule
+    前进正常、横移反向 & 轮速符号或$y$轴约定错误 & 手动低速横移、核对四轮符号、检查\texttt{base\_link}方向 \\
+    地图与激光逐渐错开 & 里程计尺度、时间或定位问题 & 单独验证里程计、时间戳、雷达外参与AMCL更新 \\
+    导航中TF跳变 & 多源发布或定位突变 & 查找每条TF发布者，确保同一变换只有一个权威来源 \\
+    仿真成功、实物振荡 & 延迟、摩擦、加速度或轮廓差异 & 降低速度，记录实际响应，再逐项检查控制和代价地图 \\
+    目标附近反复旋转 & 目标容差、姿态噪声或控制评分不匹配 & 比较目标误差、速度指令、goal checker与定位波动 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+排故应从数据源向任务层逐级进行，而不是先改行为树。每次失败至少保存目标、时间、TF、定位、代价地图、路径、速度和Action结果。若出现不可预测运动、急停失效或传感器持续超时，应立即停止自主试验，不以增加重试次数继续运行。
+
+\begin{thebibliography}{9}
+\bibitem{macenski2020nav2} Macenski, S., Martín, F., White, R., Clavero, J. \emph{The Marathon 2: A Navigation System}. IROS, 2020.
+\bibitem{macenski2023survey} Macenski, S., Moore, T., Lu, D. V., Merzlyakov, A., Ferguson, M. A survey of modern and capable mobile robotics algorithms in ROS~2. \emph{Robotics and Autonomous Systems}, 2023.
+\bibitem{navigation2source} Open Navigation LLC and contributors. \emph{Navigation2 source tree}: bringup parameters, servers, lifecycle manager, velocity smoother and collision monitor, local version 1.4.0, static inspection, 2026-08-09.
+\end{thebibliography}
+
+\noindent\textbf{待验证：}教学机器人几何参数、传感器型号、频率、速度与加速度边界、制动距离、评价目标集和实物结果。
+\end{document}

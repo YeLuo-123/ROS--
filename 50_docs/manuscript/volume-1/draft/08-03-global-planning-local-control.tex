@@ -1,0 +1,82 @@
+% !TeX program = xelatex
+% 章节：第8章 8.3节 全局路径规划与局部控制
+% 验证状态：算法说明与本地Navigation2源码静态审查完成；运行待验证。
+\documentclass[UTF8,zihao=-4]{ctexart}
+\usepackage{amsmath,amssymb,bm,booktabs,geometry,hyperref,siunitx}
+\geometry{a4paper,left=28mm,right=28mm,top=25mm,bottom=25mm}
+\hypersetup{colorlinks=true,linkcolor=blue,citecolor=blue,urlcolor=blue}
+\sisetup{per-mode=symbol}
+\title{第8章自主导航与任务执行\\\large 8.3 全局路径规划与局部控制}
+\author{}\date{}
+\begin{document}\maketitle
+
+\noindent\textbf{教学定位：}全局规划回答“从哪里走”，局部控制回答“下一时刻怎样运动”。本节以栅格搜索、A*思想和Nav2的插件接口建立共同概念，再以DWB说明DWA类局部轨迹评价方法，并专门讨论麦克纳姆轮的全向约束。
+
+\section*{8.3 全局路径规划与局部控制}
+
+\subsection*{8.3.1 全局规划器：栅格搜索与A*等方法}
+
+在栅格地图中，可将可通行栅格视为图的节点，相邻栅格之间的移动视为边。路径规划的目标是在避开致命障碍的前提下，找到从起点到目标的低代价节点序列。路径代价不仅包括几何距离，也可以包含代价地图中的贴障风险、转向代价和运动学约束。
+
+Dijkstra算法按起点累计代价$g(n)$扩展节点，能够在非负边权图上找到最小代价路径。A*在此基础上加入从当前节点到目标的启发式估计$h(n)$：
+\begin{equation}
+  f(n)=g(n)+h(n).
+  \label{eq:a-star-score}
+\end{equation}
+当$h(n)$不高估真实剩余代价时，A*仍能保持最优性，并通常减少与目标无关的搜索。启发式过弱时接近Dijkstra，设计不当则可能牺牲最优性或效率\cite{macenski2023survey}。
+
+Nav2的\texttt{planner\_server}通过\texttt{nav2\_core::GlobalPlanner}插件接口加载具体规划器。本地源码包含NavFn、Smac 2D、Hybrid-A*、State Lattice和Theta*等相关包。二维栅格规划适合教学入门；Hybrid-A*和状态格可把朝向及车辆运动约束纳入搜索，但计算与参数更复杂。对麦克纳姆轮底盘，选择规划器时还需确认其路径表示和后续控制器是否允许全向运动，不能仅因底盘可横移就假定所有插件会自动利用该能力。
+
+规划失败时应先区分“没有连通路径”和“配置错误”。检查起点与目标是否落在自由空间、全局代价地图是否完整、机器人轮廓是否堵塞窄通道、TF是否能把目标变换到全局坐标系，再比较不同规划器。盲目减小安全距离可能让规划成功，却把碰撞风险转移给局部控制器。
+
+\subsection*{8.3.2 局部轨迹生成与DWA控制器}
+
+局部控制器接收全局路径和当前速度，在有限预测时间内生成候选速度或轨迹，剔除碰撞方案，并根据路径跟踪、目标接近、障碍距离和运动平滑性等指标选择控制量。经典动态窗口法（Dynamic Window Approach，DWA）只在当前速度经过加速度约束后短时间可达的速度窗口内采样，从而使输出满足动力学限制。
+
+Nav2可将NavFn等算法加载为全局规划插件，并将DWB作为可配置的DWA类控制器；规划器与控制器都可以通过插件接口替换\cite{macenski2020nav2}。DWB（Dynamic Window Based）是ROS~1 DWA与\texttt{base\_local\_planner}的后继实现，并不是只有一个固定评分公式。它通过轨迹生成器产生候选轨迹，再由多个critic插件评分，概念上可写为
+\begin{equation}
+  J(\tau)=\sum_{j=1}^{m}w_j J_j(\tau),
+  \label{eq:dwb-score}
+\end{equation}
+其中$\tau$为候选轨迹，$J_j$可表示障碍、路径距离、目标距离、路径方向、振荡或原地旋转等代价，$w_j$为权重。得分最低且无碰撞的候选轨迹用于产生速度指令\cite{navigation2source}。
+
+DWB源码提供类似传统轨迹展开的\texttt{StandardTrajectoryGenerator}，以及接近DWA可达速度窗口思想的\texttt{LimitedAccelGenerator}。因此教材中应写“DWB中的DWA类控制”，不应把DWB与经典DWA完全等同。调参时先确保轨迹采样覆盖机器人允许速度，再调评分权重；若没有可行轨迹，继续修改评分权重不会解决传感器、轮廓或加速度边界错误。
+
+\subsection*{8.3.3 麦克纳姆轮全向速度约束与加速度限制}
+
+麦克纳姆轮底盘的平面速度为
+\begin{equation}
+  \bm{v}_B=
+  \begin{bmatrix}v_x&v_y&\omega_z\end{bmatrix}^{\mathrm T},
+\end{equation}
+其中$v_y$不能像差速底盘那样固定为零。控制器必须使用支持全向运动的轨迹生成器或运动模型，并正确配置$y$方向的最小、最大速度与采样数量。若控制器仍按差速模型工作，机器人即使机械上能够横移，也只会通过前进和旋转接近目标。
+
+速度上限还必须满足单轮能力。若第6章逆运动学写为
+\begin{equation}
+  \bm{\omega}_w=\bm{J}^{-1}\bm{v}_B,
+\end{equation}
+则所有候选底盘速度都应满足
+\begin{equation}
+  \left|\omega_i\right|\le \omega_{i,\max},\qquad i=1,2,3,4.
+  \label{eq:wheel-speed-limit}
+\end{equation}
+当组合指令同时包含较大的$v_x$、$v_y$和$\omega_z$时，某个车轮可能先达到饱和。底盘驱动应按统一比例缩放或采用明确的优先级策略，避免分别截断各轮速度导致运动方向改变。
+
+加速度限制决定速度变化率：
+\begin{equation}
+  a_{q,\min}\le\frac{q_k-q_{k-1}}{\Delta t}\le a_{q,\max},
+  \quad q\in\{v_x,v_y,\omega_z\}.
+  \label{eq:body-acc-limit}
+\end{equation}
+限制过紧会导致跟踪迟缓，过松会引起打滑、电流冲击和横向振动。麦克纳姆轮横向效率和附着条件通常不同于纵向，因此$v_y$与其加速度上限不应机械复制$v_x$。初值应来自底盘厂家数据和低速测试，再通过第8.6节的单变量实验调整。
+
+\subsection*{观察与诊断}
+
+建议记录全局路径、候选局部轨迹、最终速度指令和四轮目标速度。若路径存在但机器人不动，检查控制器是否有可行轨迹、进度检查器是否超时以及速度是否被平滑器或底盘限幅。若只在横移时失败，重点核对全向运动模型、$v_y$采样范围、轮速符号与轮地打滑。上述结论为静态教学设计，参数尚未在教学实物上验证。
+
+\begin{thebibliography}{9}
+\bibitem{macenski2020nav2} Macenski, S., Martín, F., White, R., Clavero, J. \emph{The Marathon 2: A Navigation System}. IROS, 2020.
+\bibitem{macenski2023survey} Macenski, S., Moore, T., Lu, D. V., Merzlyakov, A., Ferguson, M. A survey of modern and capable mobile robotics algorithms in ROS~2. \emph{Robotics and Autonomous Systems}, 2023.
+\bibitem{navigation2source} Open Navigation LLC and contributors. \emph{Navigation2 source tree}: \texttt{nav2\_planner}, \texttt{nav2\_dwb\_controller}, \texttt{nav2\_smac\_planner} and related packages, local version 1.4.0, static inspection, 2026-08-09.
+\end{thebibliography}
+\end{document}

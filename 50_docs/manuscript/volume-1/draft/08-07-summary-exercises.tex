@@ -1,0 +1,84 @@
+% !TeX program = xelatex
+% 章节：第8章 8.7节 本章小结与习题
+% 验证状态：教学任务设计完成；运行步骤与评分数据待Ubuntu和实物验证。
+\documentclass[UTF8,zihao=-4]{ctexart}
+\usepackage{amsmath,amssymb,booktabs,geometry,hyperref,enumitem}
+\geometry{a4paper,left=28mm,right=28mm,top=25mm,bottom=25mm}
+\hypersetup{colorlinks=true,linkcolor=blue,citecolor=blue,urlcolor=blue}
+\title{第8章自主导航与任务执行\\\large 8.7 本章小结与习题}
+\author{}\date{}
+\begin{document}\maketitle
+
+\section*{8.7 本章小结与习题}
+
+Nav2把目标接口、生命周期服务器、代价地图、规划器、控制器、行为树和恢复行为组织成持续反馈的自主导航系统。全局规划在较大空间范围内寻找可行路径，局部控制根据附近障碍和机器人运动约束产生速度指令；行为树负责规划、跟踪、重试、恢复和取消的任务编排。真实机器人导航的效果还取决于定位、TF、时间戳、轮廓、底盘动态和传感器质量，不能只靠调整某一个规划器参数解决。
+
+Nav2通过生命周期管理、插件化任务服务器和行为树实现可靠、模块化、可重配置的导航架构。复现实验时应记录ROS发行版、Nav2版本、插件类型、参数文件与行为树文件，以保证接口和结果可追溯\cite{macenski2020nav2,navigation2source}。
+
+本章的核心因果链为
+\begin{equation}
+  \text{目标与定位}
+  \rightarrow \text{全局路径}
+  \rightarrow \text{局部控制}
+  \rightarrow \text{底盘执行}
+  \rightarrow \text{状态与环境反馈}
+  \rightarrow \text{任务继续、恢复或终止}.
+\end{equation}
+评价导航时应同时检查任务是否完成、路径与时间是否合理、障碍距离是否安全、恢复是否有效、取消后是否停车，以及结果能否由日志、TF、路径和速度记录复现。
+
+\subsection*{8.7.1 Nav2架构与行为树理解题}
+
+\begin{enumerate}[label=\arabic*.]
+  \item 画出从\texttt{NavigateToPose}目标到\texttt{cmd\_vel}的最小数据流，标出\texttt{bt\_navigator}、\texttt{planner\_server}、\texttt{controller\_server}、全局代价地图和局部代价地图的作用。
+  \item 说明“节点进程存在”和“生命周期节点处于\texttt{active}状态”的区别。若Action服务器不可用，应按什么顺序检查？
+  \item 比较Sequence和Fallback的返回逻辑。设计一棵“路径有效则跟踪，否则重新规划；规划失败时清除全局代价地图后重试一次”的简化行为树。
+  \item 解释为什么DWB不能简单等同于经典DWA。轨迹生成器、critic插件和速度窗口分别承担什么作用？
+  \item 分析以下说法是否正确：“只要把膨胀半径调小，全局规划器就一定能让机器人通过窄门。”要求同时考虑机器人轮廓、定位误差和控制误差。
+  \item 对比\texttt{NavigateThroughPoses}和\texttt{waypoint\_follower}的任务语义，并各给出一个更适合的应用场景。
+\end{enumerate}
+
+\subsection*{8.7.2 多目标巡航与动态避障任务}
+
+\noindent\textbf{任务目标：}在Gazebo中完成至少三个目标位姿的顺序导航，并加入一个可移除的动态障碍，观察局部避障、重新规划和恢复行为。主环境为Ubuntu~22.04、ROS~2 Humble与其兼容的Gazebo；当前任务尚未运行验证。
+
+\paragraph{先修与准备。}
+应已完成第6章局部里程计和第7章地图、AMCL定位；准备可复现地图、麦克纳姆轮机器人模型、激光数据、Nav2参数文件、行为树XML和rosbag2记录目录。实验前确认速度限制和仿真急停方式。
+
+\paragraph{实施步骤。}
+\begin{enumerate}
+  \item 静态检查\texttt{map}$\rightarrow$\texttt{odom}$\rightarrow$\texttt{base\_link}以及激光坐标系，确认Nav2受管节点均已激活；
+  \item 发送三个合法目标，记录目标顺序、Action反馈、全局路径和速度指令；
+  \item 在第二段路径上放置临时障碍，观察局部代价地图的标记、控制器减速或绕行，以及全局路径是否重新生成；
+  \item 移除障碍，观察障碍清除和任务继续过程；
+  \item 再设置一个持续封路情境，记录恢复次数、恢复动作、最终失败或取消结果；
+  \item 在任务执行中发出取消，确认不再进入后续目标且最终速度归零。
+\end{enumerate}
+
+\paragraph{提交证据。}
+提交参数文件、行为树XML、目标点列表、节点与接口图、rosbag2或等价数据记录、每个目标的结果表，以及一次失败的“现象---证据---原因---修复”分析。不得只提交RViz画面或“机器人成功到达”的文字描述。
+
+\paragraph{典型失败与诊断。}
+目标立即拒绝时检查坐标系和Action接口；有路径但不运动时检查控制器、局部代价地图和速度链；障碍不出现时检查传感器Topic、TF、标记范围和时间戳；障碍移除后仍残留时检查清除射线；恢复无限重复时检查行为树重试上限和错误条件。
+
+\subsection*{8.7.3 真实导航调参与评价题}
+
+\begin{enumerate}[label=\arabic*.]
+  \item 为麦克纳姆轮机器人设计$v_x$、$v_y$和$\omega_z$最大速度及加速度的测量方案。说明场地、测量量、重复次数、停车条件和异常终止条件。
+  \item 设计“定位---代价地图---规划器---控制器---行为树”的串级调参记录表。要求每次实验只改变一个主要参数，并说明选择该参数的观测依据。
+  \item 给定同一组起终点的10次导航结果，设计成功率、执行路径长度、任务时间、终点误差、最小障碍距离和恢复次数的统计方法。说明均值之外为什么还应报告离散程度和失败类型。
+  \item 某机器人在仿真中通过窄门稳定，实物中却反复左右振荡。按优先级提出至少五项检查，并说明每项需要观察的数据。
+  \item 机器人横移时局部路径正确，但实物向相反方向运动。区分规划层、控制层、运动学层和电机驱动层可能出现的符号错误，给出最小化风险的分层测试步骤。
+  \item 解释为什么AMCL输出不能同时作为被评价导航轨迹的绝对真值。若没有运动捕捉系统，可以使用哪些有限但诚实的评价方法？
+\end{enumerate}
+
+\paragraph{综合评价建议。}
+概念与架构占20\%，接口、TF和生命周期检查占15\%，多目标任务完成度占20\%，动态障碍与恢复证据占20\%，数据记录和性能评价占15\%，故障分析与复现说明占10\%。若发生危险运动、取消后未停车或通过关闭碰撞检查规避问题，不得判定导航任务通过。
+
+\begin{thebibliography}{9}
+\bibitem{macenski2020nav2} Macenski, S., Martín, F., White, R., Clavero, J. \emph{The Marathon 2: A Navigation System}. IROS, 2020.
+\bibitem{macenski2023survey} Macenski, S., Moore, T., Lu, D. V., Merzlyakov, A., Ferguson, M. A survey of modern and capable mobile robotics algorithms in ROS~2. \emph{Robotics and Autonomous Systems}, 2023.
+\bibitem{navigation2source} Open Navigation LLC and contributors. \emph{Navigation2 source tree}, local version 1.4.0, static inspection, 2026-08-09.
+\end{thebibliography}
+
+\noindent\textbf{编写状态：}8.7习题与任务结构已完成；命令、参数、预期现象、评分阈值和实物安全边界待Ubuntu~22.04、ROS~2 Humble及教学机器人验证。
+\end{document}
