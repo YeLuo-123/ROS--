@@ -1,6 +1,6 @@
 # 当前项目状态
 
-更新日期：2026-08-09
+更新日期：2026-09-02
 
 ## 总体状态
 
@@ -20,6 +20,8 @@
 - 第二册第6章6.1节“麦克纳姆轮运动学”Skill结构化LaTeX初稿存放于`50_docs/manuscript/volume-1/draft/06-01-mecanum-wheel-kinematics.tex`，覆盖轮型对比、坐标系与车轮编号、运动分解、正逆运动学、误差和诊断；已完成静态审查，尚待LaTeX编译和实物参数验证。
 - 第二册第6章6.2至6.3节LaTeX初稿存放于`50_docs/manuscript/volume-1/draft/06-02-03-robot-state-coordinate-odometry-imu.tex`，覆盖状态定义、真值/测量/估计辨析、`odom`至`base_link`局部TF，以及完整的编码器脉冲换算、麦克纳姆轮里程计积分、六轴/九轴IMU测量、误差诊断和三类传感器对比；已完成静态审查，尚待LaTeX编译和教学平台数据验证。
 - 第二册第8章8.1至8.7已分别形成独立LaTeX初稿，存放于`50_docs/manuscript/volume-1/draft/08-*.tex`，覆盖Nav2系统与生命周期、代价地图、全局规划与DWB局部控制、麦克纳姆轮全向约束、行为树、多目标巡航、动态避障与恢复、实物调参与评价、章末习题。算法内容参考Macenski等人的ROS 2现代移动机器人算法综述，架构设计补充参考本地`references/navigation2.pdf`所收录的2020年Navigation2系统论文，接口与源码结构参考本地Navigation2 1.4.0主分支快照；已完成静态审查，ROS 2 Humble接口差异、LaTeX编译、Gazebo和实物运行待验证。
+- 根目录`draft.tex`中的第二册7.3、7.5与7.6节已扩写：7.3补充粒子滤波循环、AMCL与EKF职责边界、数据链、麦轮全向模型、激光模型、初始位姿和收敛证据；7.5补充地图重影/断裂/错误回环分型、定位跳变判断、定量评价、实物场地与路线设计；7.6补充本章知识闭环、分层分析题、仿真与实物验收任务、故障注入实验及Technical English。专业内容参考本地Navigation2论文及ROS 2现代移动机器人算法综述，已完成LaTeX静态审查，命令、参数和实物效果仍待Ubuntu 22.04 + ROS 2 Humble平台验证。
+- 根目录`draft.tex`已新增第二册第9章“相机、深度感知与YOLO26视觉识别”完整初稿，覆盖ROS图像接口、针孔模型、标定质量、深度反投影、点云、YOLO26检测与训练评价、ROS推理接口、三维目标定位、分层诊断、Technical English及章末任务。内容已按ROS 2 Humble官方消息定义与Ultralytics YOLO26官方资料完成静态核查；相机型号、驱动话题、训练结果、推理性能、LaTeX编译与实物三维定位仍待验证。
 
 ## 代码状态
 

@@ -1,0 +1,1574 @@
+                                          From the Desks of ROS Maintainers: A Survey of Modern & Capable
+                                             Mobile Robotics Algorithms in the Robot Operating System 2
+                                                       Steve Macenski                            Tom Moore                           David V. Lu
+                                                     ROS 2 Project Lead                Robot Localization Maintainer             ROS 1 Co-Maintainer
+                                                      Samsung Research                        Locus Robotics                         Metro Robots
+                                                  s.macenski@samsung.com                 tmoore@locusrobotics.com                 davidvlu@gmail.com
+
+                                                                      Alexey Merzlyakov                                      Michael Ferguson
+                                                                        ROS 2 Developer                                     ROS 1 Co-Maintainer
+                                                                       Samsung Research                                        Cobalt Robotics
+arXiv:2307.15236v2 [cs.RO] 31 Jul 2023
+
+
+
+
+                                                                alexey.merzlyakov@samsung.com                             fergs@cobaltrobotics.com
+
+
+
+
+                                            Abstract— The Robot Operating System 2 (ROS 2) is rapidly        ecosystem and provides a next-generation autonomous mo-
+                                         impacting the intelligent machines sector - on space missions,      bile robotics navigation framework and system [2]. The
+                                         large agriculture equipment, multi-robot fleets, and more. Its      original Navigation Stack was developed at Willow Garage
+                                         success derives from its focused design and improved capa-
+                                         bilities targeting product-grade and modern robotic systems.        for the PR2 robot and based around an unconfigurable
+                                         Following ROS 2’s example, the mobile robotics ecosystem has        state machine, move base [3]. It largely supported circular
+                                         been fully redesigned based on the transformed needs of modern      differential-drive and omnidirectional research platforms.
+                                         robots and is experiencing active development not seen since           Nav2 was built from the ground up to leverage innovations
+                                         its inception.                                                      in behavior trees and contains refreshed algorithms. It sup-
+                                            This paper comes from the desks of the key ROS Navigation
+                                         maintainers to review and analyze the state of the art of           ports all common forms of classical robots (e.g. differential,
+                                         robotics navigation in ROS 2. This includes new systems without     omnidirectional) as well as newer robot platforms such as
+                                         parallel in ROS 1 or other similar mobile robotics frameworks.      Ackermann, large, non-circular, and quadruped robots. It
+                                         We discuss current research products and historically robust        maintains production-grade quality standards with 90% unit
+                                         methods that provide differing behaviors and support for            test coverage and seeks to re-centralize development across
+                                         most every robot type. This survey consists of overviews,
+                                         comparisons, and expert insights organized by the fundamental       academia and industry.
+                                         problems in the field. Some of these implementations have yet to       The Nav2 project and ROS 2’s mobile robotics ecosystem
+                                         be described in literature and many have not been benchmarked       have been developing new capabilities at a pace not seen
+                                         relative to others. We end by providing a glimpse into the future   since the days of Willow Garage. New algorithms, features,
+                                         of the ROS 2 mobile robotics ecosystem.                             and behavior trees are being added on a quarterly basis
+                                                                                                             as the result of open collaborations between companies,
+                                                               I. I NTRODUCTION
+                                                                                                             individuals, and academia. Over the past two years, a com-
+                                            The Robot Operating System 2 (ROS 2) was redesigned              pelling set of new algorithms and behaviors have been made
+                                         from the ground up to meet the requirements of mod-                 available - some of which have no comparable capability in
+                                         ern robotics research and commercial products in ware-              other similar frameworks (ROS 1, MRPT, etc) - and have
+                                         houses, urban settings, agriculture, aerospace, autonomous          yet to be compared in literature [4]. The introduction of
+                                         driving, and more. It also provides previously missing capa-        Nav2 ([2]) showcases many of these new algorithms and
+                                         bilities such as security, multi-robot communications, and          behaviors working on commercial robots in highly dynamic
+                                         embedded/real-time support. Philosophically, ROS 2 was              environments navigating over 2 marathons in length on an
+                                         created as a production-grade robotics framework to serve           active college campus. The authors recommend reviewing
+                                         the growing and maturing robotics industry [1].                     this document for a practical and reproducible example of
+                                            The transition to ROS 2 has sparked a renaissance of new         the composed capabilities described in this paper.
+                                         development in long-dormant project ecosystems. This new               This survey comes from the desks of core ROS developers
+                                         development is holistic, comprising algorithmic refreshes,          and maintainers to be the authoritative discussion on the
+                                         new features, documentation, and increased maturity in-             state-of-the-art in ROS 2 robotics navigation. This survey
+                                         spired by ROS 2’s philosophical and procedural changes.             includes overviews, analysis, and unique expert insight into
+                                         The mobile robotics ecosystem in ROS 2 has seized this              the algorithms and capabilities, new and old. We discuss and
+                                         opportunity to rethink and redesign based on the needs of           compare current research products with historically robust
+                                         modern systems.                                                     methods. Brief benchmarking within provides metrics for the
+                                            Nav2 is the major project within the mobile robotics             first time for the new key methods. Finally, this survey ends
+with a glimpse into the future of ROS 2 mobile robotics           approximated as circular. Non-circular robots that are small
+capabilities.                                                     relative to their environment may be treated as circular for
+                                                                  global planning purposes if there is no navigable corridor
+       II. OVERVIEW OF G LOBAL PATH P LANNERS                     too narrow to accommodate an in-place rotation. While
+   Global path planning seeks to address the foundational         differential-drive robots cannot move at any angle, they may
+problem of finding optimal sequences of valid configurations      perform in-place rotations to a given requested heading if
+to determine a route through an environment. A path may           required. Thus, many forms of differential-drive platforms
+have different levels of fidelity. It may comprise sequences of   may effectively use holonomic planners.
+neighboring cells in a grid map, feasible and continuous se-         These planners generally create paths via traditional grid-
+quences, or even vehicle dynamics. For global path planning       based algorithms. Since they do not track robot orientation
+in Nav2, only up to kinematic constraints are considered. The     during grid-search, these algorithms collision check using
+hybrid planning schema utilized establishes that the global       point-costs of the visited cells in an inflated or convolved cost
+planner’s objective is to find a route through the environment,   grid, which are discussed further in Sec. V. Those included in
+while a local trajectory planner follows this route considering   Nav2 are Navigation Function (commonly known as NavFn),
+system dynamics and other criteria [5].                           Theta*, and smoothed 2D-A* [8], [9], [10].
+   The definition of optimal in global path planning can
+vary with application, and at its core, the algorithms are all
+extensions of Dijkstra’s algorithm in trying to find the path
+with minimal cost [6]. In Nav2, the cost is largely determined
+by the cost map which is discussed at length in Sec. V. In
+practice, the result is usually the shortest path that does not
+navigate too closely to any obstacle, as seen in Figure 1.
+   Path planners are typically either search- or sampling-
+based. Sampling-based planners, like RRT and its variants,
+are prevalent for higher dimensional planning problems and
+can provide near-optimal paths - although they commonly re-
+quire post-processing before use [7]. However, search-based
+planners in lower dimensional state spaces, like those found
+in mobile robotics, are typically faster and produce truly
+optimal paths when heuristics are admissible and consistent.
+Search-based planners also provide more predictable execu-
+tion times important to dynamic replanning over complex
+large-scale environments.
+   Thus, Nav2 provides primarily search-based global plan-
+                                                                  Fig. 1. Example plans from the holonomic planners. NavFn in red, Theta*
+ning methods. The furnished algorithms cover the full             in green, 2D-A* in blue.
+spanning set of both circular and arbitrarily-shaped robot
+models, including differential-drive, holonomic, Ackermann,          Navigation Function planner is a modified Global Dy-
+and legged robot platforms. Namely, these are Navigation          namic Window Approach planner based on the NF1 function
+Function, 2D-A*, Theta*, Hybrid-A*, and State Lattice             [8]. It uses Dijkstra’s Algorithm to expand a potential field
+planners. All of the planners are cost-aware, meaning they        from the goal cell to the start using a Von Neumann neigh-
+consider the range of cost map risk values populated from         borhood. The potential field is calculated using a quadratic
+sensor data, perception pipelines, or semantic information        kernel function rather than distances to the goal (NF1) to
+such as maps - not solely binary obstacles.                       create a smoother potential field, and thus smoother output
+   For comparison, a AMD Ryzen 5 5600X CPU with                   paths [11]. The kernel at a cell is found based on the cell’s
+Ubuntu 20.04 was utilized to benchmark each planning algo-        cost and the value of its neighboring cells’ potentials. The
+rithm. The experiment contained 1,000 randomly generated          planning costs at each cell are linearly remapping from the
+start and goal poses through a 20% randomly occupied              cost grid to produce a minimum cost to travel, or neutral cost.
+10,000m2 map. Each start and goal pairing was made to             Therefore, each cell’s cost ranges from the neutral to maxi-
+be at least 3 meters apart and known to be reachable. All of      mum cost when populating the potential field. This generates
+the algorithms are analyzed with the same 1,000 paths and         increasing costs each wavefront until the start cell is found.
+uses the provided default settings. The results are shown in      Finally, to traceback the path, gradient descent is applied
+Table I.                                                          from the start cell in the potential field in half resolution
+                                                                  sized increments to produce a uniformly distributed path.
+A. Holonomic Planners                                                This planner is the oldest algorithm in Nav2 - derived
+  Nav2 provides a variety of holonomic path planners.             from the ROS (1) Navigation Stack and created in the first
+This class of planner is most useful for omni-directional         public commit to the project. Regardless of age, it is highly
+or differential-drive robots, particularly those that may be      optimized with managed priority buffers and remains as one
+                                                               TABLE I
+                                        PATH P LANNERS C OMPARISON , B OLDED W ITHIN 3% OF B EST
+
+
+          Path Planner      Plan Time (ms)   Path Length (m)   Feasible     Circular   Non-Circ.   Diff.   Omni.   Ackermann    Legged
+             NavFn               61.02            52.25           -            ✓          -         ✓       ✓          -           -
+        Lazy Theta*-P1           94.42            50.28           -            ✓          -         ✓       ✓          -           -
+         Smac 2D-A*1             88.82            49.65           -            ✓          -         ✓       ✓          -           -
+       Smac Hybrid-A*1           38.77            50.78           ✓            ✓          ✓         ✓       -          ✓          ✓
+      Smac State Lattice1        39.40            50.51           ✓            ✓          ✓         ✓       ✓          ✓          ✓
+                    1 Exclusive to ROS 2.              An inter-modal algorithm selection summary can be found in Appendix I.
+
+
+
+of the most effective holonomic planners available, typically             conducts only one LoS check when visiting a cell rather than
+taking between 15 - 175 ms. It has been proven by dozens,                 for each expanded cell, yielding a reduction in expensive
+if not hundreds, of robotics companies and researchers over               LoS checks. Lazy Theta*-P builds on this by evaluating LoS
+the past ten years in a variety of industry, consumer, and                on the current node’s grandparent rather than parent in the
+service applications. Due to its speed and long-term stability,           graph. Lazy Theta*-P also has the important property that
+the Navigation Function planner is a good general-purpose                 every expanded cell will have definite line-of-sight with its
+option and remains the default planning algorithm in Nav2.                set parent. The speculative assumption in Lazy Theta* that a
+   Although it is the fastest holonomic planner, it produces              line-of-sight between the node’s neighbor and parent exists
+paths 5% longer by design, Table I. The neutral cost balances             is not always true. Even if this is corrected when visited, it
+cell costs with path lengths when generating the potential                does not maintain the same properties as A*. However, as
+field. It was carefully selected empirically to produce high-             a consequence, Lazy Theta*-P performs more LoS checks
+quality paths in a variety of environments, including routing             than Lazy Theta*, as it needs to expand more cells.
+down centers of hallways, maintaining safe margins from                      Since Theta* and its variants may produce plans at any
+obstacles when space is allotted, and lacking in excessive                angle, it is particularly useful for maps at non-axially aligned
+movements. The planner is made to prefer slightly longer                  angles where planners restricted to 4- or 8-connected neigh-
+routes to minimize cost, which provides additional margins                borhoods would produce jagged paths. While it is common to
+from collision, which can be seen on Fig. 1. However, the                 rotate maps such that they are axially aligned with important
+neutral cost may be tuned for different behaviors.                        features, that is not always practical nor possible. It is also
+   Lazy Theta*-P is an any-angle path planner based on A*                 useful in spaces with many long, straight corridors com-
+[9]. The base Theta* technique modifies A* with line-of-                  monly found in office buildings, warehouses, retail stores,
+sight (LoS) checks between the parent of a node and the                   and similar. Theta*’s straight line characteristics are powerful
+neighbor being expanded from that node. If there is LoS,                  for predictability of robot behavior to bystanders, as well
+that connection is considered to short-cut the current visited            as providing more fine-tuned and localized alignment to the
+node. In this implementation, each grid cell is a potential               environment, Fig. 1.
+search node. During planning, the visited nodes may be                       In experiments, this algorithm had the shortest path
+repeatedly short-cutted until there is no longer a valid line-of-         lengths, yet the longest run-time due to the expensive LoS
+sight - resulting in the possibility of any-angle LoS between             checks. Yet it still displays appropriate run-time performance
+potentially distant parent and child nodes.                               under 100 ms making it applicable in many practical appli-
+   Line-of-sight checks are implemented using Bresenham’s                 cations, Table I.
+ray-casting algorithm [12]. The LoS check evaluates if there                 2D-A* planner is the simplest of the holonomic ap-
+is a collision with the environment between the two nodes;                proaches, as a cost grid-A* planner [10]. It is implemented
+but the Theta* planner in Nav2 also evaluates if the inte-                within the Smac Planner Framework complimentary to the
+grated cost of the line is below a configurable threshold to              feasible planners discussed in Sec. II-B. See Appendix II
+be considered valid. This process breaks LoS for a given plan             for more information about the Smac Planner Framework.
+heading to be more responsive to the localized environment                The 2D-A* planner uses Moore neighborhoods with an L2
+in high-cost (e.g. confined) areas. In practice, this makes the           distance heuristic. The travel cost between cells is derivative
+planner cost-aware, similar to other planners discussed, such             of the cost-aware obstacle heuristic discussed later in detail,
+that a path doesn’t route unacceptably close to obstacles.                and takes the form:
+This threshold may be tuned for an optimal trade-off between
+segment lengths and proximity to obstacles. After planning,
+                                                                                                                     cost(x, y)
+the path is interpolated over its constituent LoS segments to                          costtravel = d (1.0 + ωcost              )        (1)
+                                                                                                                      costmax
+create a regularized path.
+   Nav2’s Lazy Theta*-P uses a Moore neighborhood and L2                     where d is the distance between cells, ωcost is the con-
+distance heuristic. Lazy Theta* optimizes the algorithm by                figurable weight placed on penalizing cost, cost(x, y) is the
+reducing the number of line-of-sight checks by delaying them              cost at a cell (x, y), and costmax is the maximum possible
+until they are strictly necessary [13]. This lazy evaluation              cost to normalize the term relative to the penalty weight.
+When the √ cost is 0, it is simply the distance between cells                    Hybrid-A* was proposed by Stanford during the DARPA
+(1.0 or 2), thereby the heuristic is admissible.                              Urban Challenge as an extension of traditional grid-A* [14].
+   To smooth out the path generated from backtracing cells,                   It uses motion primitives to search a grid map in a tree-
+the simple smoothing algorithm from Eq. 4 is employed                         fashion using continuous coordinates associated at discrete
+to remove jagged edges, smooth turns, and eliminate other                     cells (x, y, θ). This ensures continuous and feasible paths.
+localized defects. This planner uniquely enables users to                     The primitives are composed of straight segments and cir-
+downsample cost grids into different resolutions for holo-                    cular arcs (left and right) of the minimal turning radius for
+nomic planning to increase speed O(N 2 ) in large spaces1 .                   a car-like base. Periodic analytic expansions are applied to
+Unsurprisingly, since the Smac Planners share much of the                     find exact and optimal solutions from a currently expanded
+search and penalty structures, their paths are within 3% of                   pose to the goal pose. If this expansion is valid and collision
+each other (Table I), where 2D-A* is the shortest largely                     free, it is included in the route to complete the planning
+attributable to the lack of non-holonomic constraints.                        process. The search primitives and analytic expansions can
+   The 2D-A* planner is most useful when being deployed in                    be computed utilizing using Dubin or Reeds-Shepp models,
+heterogeneous fleets of robots, whereas the non-holonomic                     depending if reversing is a permissible action.
+or large robots are using other planners within the Smac                         Thus, this method is specifically designed for car-like or
+Planner framework. This enables all robots in a fleet to have                 Ackermann vehicles; however, it has utility for legged and
+consistent planning behavior based on analogous penalty                       large robots beyond naked feasibility of non-circular plat-
+functions trading off grid map cost and path length using                     forms. Limiting path curvature can be of practical importance
+the same weights.                                                             for high-speed robot systems to prevent centripetal force
+                                                                              from flipping over legged platforms or dumping unsecured
+                                                                              loads off of differential or holonomic robots (e.g., material
+B. Kinematically Feasible Planners
+                                                                              handling, delivery).
+   In contrast to the holonomic planners, Nav2 also pro-                         The Hybrid-A* planner provided by Nav2 within the Smac
+vides a set of kinematically feasible planners - or planners                  Planner framework provides a few additional unique varia-
+that consider kinematic constraints. These planners enable                    tions. Rather than using solely binary collision information,
+integration with modern robots such as Ackermann and                          all values in the cost grid are utilized to steer the feasible
+legged robots, as well as providing accurate modeling of                      search via an admissible cost-aware obstacle heuristic func-
+non-circular differential-drive and holonomic bases. There                    tion. This leads optimal paths into lower-costed regions away
+are many cases where classical robots are large relative to                   from obstacles, respects user generated cost grid constraints
+their environment and require explicit modeling to create                     (such as keepout zones or penalizing narrow spaces), and
+feasible global paths. Since orientations are being considered,               improves path quality. This is sufficiently effective that
+collision checking and planning may use the robot shape to                    expensive post-processing of the paths proposed in [14] is not
+generate paths that are high fidelity even through narrow                     strictly necessary to improve paths’ smoothness and safety
+spaces. The feasible planners in Nav2 are Hybrid-A* and                       margins from obstacles. Moreover, because expanded search
+State Lattice, both members of the Smac Planner framework.                    nodes are generally farther from obstacles, optimizations in
+                                                                              collision checking are made which further improve run-time
+                                                                              performance.
+                                                                                 Additionally, limits are placed on the maximum length
+                                                                              of analytic expansions to prevent excessive bypassing of
+                                                                              heuristic search. Limiting the expansion distance prevents
+                                                                              suboptimal behaviors that would have been penalized in the
+                                                                              search and/or cost grid, such as reversing for long distances
+                                                                              or entering sensitive high-cost zones. The role of analytic
+                                                                              expansions are to find a path to the exact goal, thus, it is most
+                                                                              applicable in close proximity to the goal pose. Reducing the
+                                                                              expansion length impacts performance negligibly. A typical
+                                                                              run-time for this planner is between 10-250 ms in practical
+                                                                              large deployed environments.
+                                                                                 State Lattice was utilized by Carnegie Mellon University
+                                                                              in the DARPA Urban Challenge [15], [16]. Like Hybrid-
+                                                                              A*, it uses continuous coordinates associated at discrete cells
+                                                                              to create feasible paths from motion primitives. However, it
+Fig. 2. Example plans for kinematically feasible planners with reversing.
+                                                                              leverages offline computed motion primitives that establish
+Hybrid-A* in brown, State Lattice in magenta.                                 a state lattice graph rather than expanding using trees.
+                                                                              It expands A* as a structured lattice graph and connects
+   1 Downsampled grids of half resolution results in planning times compet-   primitives at precise bin quantizations rather than at arbitrary
+itive with the other Smac Planner implementations.                            locations. The minimum control set, or motion primitives for
+State Lattice, may be computed based on an arbitrary motion                 base’s motor controller. This completes the Hybrid Planning
+model, not only for Ackermann vehicles or restrictions based                schema introduced in Sec. II, in that global planners find an
+on minimum curvature. This can handle novel or atypical                     acceptable route and trajectory planners follow it, potentially
+drive-train constraints, such as those found on planetary                   considering additional system constraints.
+exploration rovers, legged robots; or differential-drive in-                   Due to its close coupling to the mobile robot base,
+place rotations and omnidirectional lateral motions [17].                   trajectory planners are often referred to as controllers and
+Thus, it is a generalized class of planner for any robot drive-             the selection of the best trajectory planner will be highly
+train type when matched with a complimentary minimum                        dependent on the robot kinematics. For an abbreviated set of
+control set - making it a powerful addition to Nav22 .                      recommendations see Appendix I.
+   The State Lattice planner in Nav2 provides a number of                      There are a wide variety of trajectory planning techniques
+noteworthy optimizations to improve performance beyond                      to satisfy different robot base types and applications. The
+historical libraries such as SBPL, to 20-300 ms [18]. Clas-                 behavioral needs of an industrial warehouse automation
+sical State Lattice planners struggle to efficiently determine              robot differs as much from a hospitality robot as a cir-
+the best route through complex scenes using only distance-                  cular differential-drive base differs from an Ackermann-
+based heuristics. They also labor to find paths to precise goal             steering car. Thus, there are different classes of techniques
+poses with solely search. The cost-aware obstacle heuristic                 such as reactive, predictive, geometric, machine-learning,
+and analytic expansions are also shared with this planner                   and control-law derived trajectory planners. Furthermore,
+to resolve these issues, respectively. In providing the Smac                trajectory planners often need specialized tuning to match
+Hybrid-A* capabilities, this planner improves performance                   the kinematic and dynamic characteristics of a particular
+by an order of magnitude and provides remarkably simi-                      robot base. While techniques are portable between robots,
+lar results to Hybrid-A* both in compute time and path                      they typically require the most involved and intensive tuning
+length/quality, show in Table I. The path lengths and planning              of any system on a mobile robot.
+times are within 0.5% and 1.6% of each other, respectively.                    Nav2 includes several implementations of trajectory plan-
+This is a powerful result: Nav2 contains two planners with                  ners to meet the spanning set of needs for differential-
+analogous behavior each covering important niches to estab-                 drive, omnidirectional, legged, and Ackermann style vehi-
+lish support for the breadth of possible robot platform types.              cles in both circular-optimized and arbitrary-shaped forms.
+Therefore, effectively any robot base can be used with Nav2                 Namely, the Dynamic Window Approach (DWA), Regulated
+to create kinematically feasible plans, which are also akin                 Pure Pursuit (RPP), Model Predictive Path Integral (MPPI),
+to any other robot type’s plans - forming consistency across                and Rotation Shim controllers. In addition to the trajectory
+heterogeneous fleets. Fig. 2 illustrates two paths produced                 planners that are part of the Nav2 project, there are several
+by Hybrid-A* and State Lattice planners.                                    trajectory planners available in the broader ROS 2 ecosystem,
+   Note that both of these planners and the 2D-A* discussed                 such as the Timed Elastic-Band (TEB) and the Graceful
+previously derive from the Smac Planner framework. A num-                   Controller. Table II compares these controllers behaviors and
+ber of shared optimizations, pre-computations, and caching                  key attributes.
+have been made within the framework to be competitive with                     Nav2 passes each trajectory planner a rolling-zone local
+established planning algorithm implementations in planning                  cost map, planned path, and positional information to uti-
+time, behavior and path length. The Smac Hybrid-A* and                      lize along with any additional information it obtains itself
+State Lattice planners are notably faster than their 2D-A*                  through topics, parameters, or services. New to Nav2, run-
+counterpart in large part due to an initially reduced cost-                 time configurable plugin interfaces were added to abstract out
+aware obstacle heuristic resolution used to steer the feasible              commonalities between many controller implementations.
+search, which is later upsampled as nodes are visited.                      These support dynamically set speed limits, navigation goal
+                                                                            checking criteria, and progress checking algorithms.
+   III. OVERVIEW OF L OCAL T RAJECTORY P LANNERS
+   Once a global path planner or similar has found an                       A. Reactive Controllers
+acceptable route through the environment, another technol-                     Reactive trajectory planners use knowledge of the sur-
+ogy needs to convert the intended route to navigate into                    rounding environment to construct collision-free trajectories
+a stream of velocity commands for the mobile platform                       towards the objective. They do so separately from global
+to track. These commands generally attempt to follow the                    planning to ensure obstacle avoidance which is reactive
+path, but may also consider objectives such as reducing                     to changes in the local environment, which may be more
+likelihood of collision, improving smoothness, minimizing                   fine grained, up-to-date, or information rich than that used
+important objectives (curvature, acceleration, jerk), or may                in global planning. This knowledge may include sensory
+implement other primitive behaviors. This is the work of                    information in addition to map or occupancy information,
+the (Local) Trajectory Planner, which generates collision-                  though not definitionally. In Nav2, all planners use live
+free trajectories and issues current velocity commands to the               sensor information fused with a map via its local cost map
+   2 The provided control set generator yields curvature minimizing tra-
+                                                                            (discussed in Sec. V).
+jectories with optional in-place rotations and lateral motions to support      Although reactive trajectory planners often consider the
+Ackermann, Legged, Diff., Omni. robots.                                     environment around it, they lack full context in temporal
+                                                                     TABLE II
+                                                        T RAJECTORY P LANNERS C OMPARISON
+
+
+         Local Trajectory Planner      Max. Frequency (Hz)         Type       Circular   Non-Circ.    Diff.    Omni.    Ackermann      Legged
+        Model Pred. Path Integral1             125               Predictive      ✓          ✓          ✓        ✓           ✓            ✓
+           Timed Elastic Band                  130               Predictive      ✓          ✓          ✓        ✓           ✓            ✓
+                  DWB                          250               Reactive        ✓          ✓          ✓        ✓           -             -
+                Graceful                     1, 800             Control-law      ✓          ✓          ✓        ✓3          -             -
+           Reg. Pure Pursuit1               > 4, 000            Geometric        ✓          ✓          ✓        ✓           ✓            ✓
+            Rotation Shim1 2              >> 10, 000            Kinematic        ✓          ✓          ✓        ✓           -             -
+       1 Exclusive to ROS 2 2 To be paired with other algorithms 3 While not taking full advantage of the omni-directional base, this control law works
+well on powered caster bases which are not fully holonomic     An inter-modal algorithm selection summary can be found in Appendix I.
+
+
+
+                                                                                 where α, β, and γ are tunable penalty weights,
+                                                                              heading(v, ω) is a measure of distance to the goal,
+                                                                              dist(v, ω) is the distance to the nearest obstacle on the
+                                                                              trajectory, and vel(v, ω) encourages moving at full speed.
+                                                                                 Within the DWB package, this method is generalized and
+                                                                              expanded. Rather than considering only forward translational
+                                                                              motion, ẋ, lateral translation is also considered for omni-
+                                                                              directional platforms, ẏ (which may be set to zero for
+                                                                              differential-drive platforms).
+                                                                                 Further, dynamically configurable trajectory generation
+                                                                              and critic functions may be used to expand or adapt behavior
+Fig. 3. Visualization of the dynamic window of feasible velocity com-
+mands from the robot’s current state, with 9 angular velocities (vθ ) and 5   for a particular platform. This allows for customization of
+translational samples (vx ).                                                  both the generation of candidate velocities and the scoring of
+                                                                              those velocities. Currently the following critic functions have
+                                                                              been made available for users: goal alignment, goal distance,
+dimensions. These methods typically rely on potential fields                  path alignment, path distance, prefer forward motion, anti-
+or hand-engineered heuristics which score trajectories based                  twirling, anti-oscillation, and traversed cost by footprint or
+on the robot’s current state and the localized surroundings in                center values. Each contains its own relative weight and
+the current time-step only. While this can be effective in a                  configurable parameterization to produce tunable behavior.
+number of environments and boasts low computational com-                      In addition, two unique trajectory generators are also avail-
+plexity, it is often susceptible to local minima. Nonetheless,                able. The Standard Trajectory Generator samples trajectories
+robust reactive control methods continue to find a great deal                 based on a configurable maximum time ahead to forward
+of application in modern robotic systems.                                     simulate, while the Limited Acceleration Generator finds
+   In particular, the Dynamic Window Approach endures                         trajectories based on a configurable simulation period, δt,
+as a method of interest to system designers and researchers                   to apply at each time-step.
+alike. DWA is enabled by the DWB Local Planner in Nav2 3 .                       DWB is currently the default local trajectory planner in
+   The method sub-samples a set of feasible velocity com-                     Nav2, largely due to historical precedence of Base Local
+mands from the dynamic window of achievable velocities,                       Planner and DWA Local Planner in ROS (1) [20]. DWB’s
+shown in Fig. 3. These are a set of candidate commands from                   architecture is a refactor of these controllers from the original
+the robot’s current velocity state (vx , vθ ) within its dynamic              Navigation Stack to be more flexible with plugin-based critic
+limits [19]. This set contains constant velocities which create               functions and trajectory generators. The configurability of
+circular arcs when projected forward - a simple trajectory.                   DWB is unparalleled and has been shown to be capable of
+Each arc is scored against a set of critic functions and the best             any number of reactive behaviors when configured and/or
+weighted average velocity is selected for a planning iteration.               customized.
+The critic functions are mathematical operations which score                     However, the method suffers from numerous, highly inter-
+the candidate trajectories based on various criteria optimizing               related parameters that must be tuned to achieve such per-
+for desired behavior (e.g. tracking the path and avoiding                     formance (e.g. choice of critic functions and their relative
+obstacles). The original objective function takes the form in                 weightings). This process can be complex and poorly tuned
+Eq. 2:                                                                        DWB configurations can create extremely suboptimal be-
+                                                                              haviors. This tuning complexity has long been a source
+         α heading(v, ω) + β dist(v, ω) + γ vel(v, ω)                  (2)    of critique for the ROS mobile robotics community. Many
+                                                                              deploy un-tuned parameters and remark at poor robot be-
+  3 DWB as in the ’next’ after DWA. It is the successor of the DWA            havior due to the trajectory planner, although the perception
+controller found in the ROS (1) Navigation Stack.                             systems and global planning systems are quite mature. It is
+the maintainers’ aim in the medium-term future to replace
+DWB as the default algorithm with MPPI - a well-tuned,
+modern predictive controller algorithm, discussed in Sec. III-
+B, once it reaches an appropriate level of maturity.
+
+B. Predictive Controllers
+   Predictive trajectory planners are a specialization of reac-
+tive planners which consider temporal information in the pro-
+cess of constructing objective-maximizing trajectories. They
+refine the previous time-step’s trajectory when evaluating a
+current request and typically model trajectories as non-trivial
+sequences of velocity commands at future time intervals.
+This prediction gives the classification its distinction and
+makes it more robust against local minima causing a system
+to become in an unrecoverable or ’stuck’ state. Further,
+oscillation, sudden changes in velocity (and its derivatives),
+and other adverse behaviors are greatly reduced when using        Fig. 4. Example of an optimized Timed Elastic Band. The robot’s global
+well-established methods - making a robot system exhibit          plan is shown as a red path. Way points are shown as blue squares. The
+more intelligent behavior. Predictive controllers come at a       robot’s cost map is transformed into a vector representation (red blocks)
+                                                                  that is suitable for distance calculations in the optimizer. The optimized
+cost however: they are far more computationally demanding         trajectory, shown in green, comprises poses that are depicted as red arrows.
+than other approaches and are an area of evolving research.
+   Many predictive controllers are modelled and solved using
+optimization-based techniques under the umbrella of model            • Kinematic constraints can be used to ensure that the
+predictive control (MPC). MPC methods have been shown to               optimized trajectory is kinematically feasible.
+be effective on a broad range of problems within and outside         • Velocity and acceleration constraints ensure the final
+of robotics, including autonomous driving and industrial               trajectory is dynamically feasible
+applications. The two predictive controllers in Nav2 both            • Fastest path constraints ensure that the optimized tra-
+belong to the family of MPC approaches, namely the Timed               jectory is temporally efficient.
+Elastic Band (TEB) and Model Predictive Path Integral                In ROS 2, the TEB Local Planner package contains
+(MPPI) controllers - of which both are unique to the ROS          the TEB implementation [23]. It uses the g2o framework
+mobile robotics ecosystem.                                        to carry out numerical optimization [24]. At each control
+   Timed Elastic Band (TEB) is one of the most popular            iteration, the poses from some portion of the global path
+trajectory planners in ROS (1). Some global path planners         and estimated time deltas between them are added to the
+generate plans that have frequent or abrupt changes in            graph, along with the constraints described above. The graph
+direction. Elastic bands transform such paths into smooth,        is then optimized and the control command is extracted
+deformable plans that are more appropriate for trajectory         from the optimized TEB. To help constrain the problem, the
+following [21]. In the original formulation, small subsets of     planner uses the previous cycle’s optimized trajectory as the
+collision-free space, known as “bubbles,” are overlaid on the     estimated starting values for the optimization in the current
+path and overlap in such a way as to guarantee collision-         cycle. Figure 4 shows an example of an optimized TEB. The
+free movement between them. The path is then deformed             final trajectory accounts for the kinematic constraints of the
+by subjecting the bubbles to repulsive forces that represent      differential-drive platform being used, while also adhering to
+distances from obstacles and contracting forces that eliminate    the original global plan.
+excess slack in the path.                                            The package is highly configurable. As with other methods
+   TEB is an extension of Elastic Bands that also accounts        described, tuning these weighting parameters to produce
+for temporal constraints on motion, such as acceleration          optimal behavior for a given application can be time con-
+and velocity limits [22]. The constraints are weighted and        suming. Furthermore, as with all numerical soft-constraint
+optimized using a numerical optimization framework.               optimization techniques, no guarantees can be given on the
+   The poses of the robot and time deltas between poses are       optimized solution, e.g., kinematic constraints may not be
+optimized in TEB. Numerous constraints are considered in          perfectly respected, or an insufficient weight on the obstacle
+the problem formulation:                                          distance constraint may result in the TEB skirting close to
+  • Waypoints are attractive forces that encourage the robot      obstacles. This is in contrast to sampling-based approaches
+    to remain close to intermediate points along the original     like the Dynamic Window Approach, where kinematic con-
+    global path.                                                  straints can be explicitly modeled during trajectory genera-
+  • Obstacles (both static and dynamic) represent repulsive       tion.
+    forces that keep the path from colliding with objects in         Model Predictive Path Integral is an MPC variant which
+    its environment.                                              uses perturbed trajectory samples to estimate the optimal tra-
+jectory [25]. Rather than numerically optimizing trajectories
+each time-step, a large number of noised samples are gener-
+ated derived from the previous time-step’s optimal trajectory,
+each is scored, and the optimal trajectory is identified. Since
+this method does not involve the non-linear optimization
+stage found in most MPC techniques, the cost functions
+are uniquely not required to be differentiable or convex -
+yielding greater latitude in designing system behavior. The
+iterative update law optimizes the trajectory between time-
+steps, refining it as the robot moves towards its objective. It
+has been proven effective in a number of domains including
+aggressive outdoor driving and commercial robotics.
+   In Nav2, the MPPI controller utilizes tensor representa-         Fig. 5. Example MPPI controller in action; red is the original global
+                                                                    path, green is the actual path traveled by the robot (circle). The candidate
+tions to batch process trajectories. The trajectory planner         trajectories points are shown, with the optimal selected trajectory highlighted
+generates many randomly noised controls from Gaussian dis-          on top.
+tributions for each control axis (x, θ, and optionally y). The
+noised controls are added to the previous optimal trajectory’s
+velocities to create a set of randomly perturbed trajectories.      in a partial 3-point turn when a holonomic path begins in
+Constraints are applied on these trajectories’ velocity limits      the opposite direction of the robot’s initial heading. While
+and turning radii to make them physically achievable for            there are performance and behavioral differences between
+omnidirectional, Ackermann, and differential-drive robots.          TEB and MPPI, the major relative strengths of MPPI is
+Using time samples in the trajectory, the velocities are then       in its software architecture and test coverage for long-term
+projected to fully construct the trajectory poses.                  maintenance, simpler and more intuitive configurations, and
+   Each trajectory is scored by a configurable set of critic        active maintainer presence.
+functions - or objective functions which optimize for par-
+ticular elements of robot behavior. Like DWB, all of the            C. Geometric and Control-Law Controllers
+critic functions are dynamically loaded plugins and may be             As opposed to reactive and predictive controllers, geomet-
+added, removed, or customized for a particular application.         ric and control-law derived controllers are quite simple. Their
+The following critics are provided and produce good high-           aim is to follow a given reference path or objective without
+speed path tracking and active collision avoidance behavior:        deviation. Many of these techniques were early undertakings
+goal angle, goal distance, obstacle map, path align, path           in trajectory planning, but have had an immense amount
+angle, path follow, prefer forward, anti-twirling, and dynamic      of staying power. While dynamic behaviors give a robotic
+constraints. After scoring, the batch’s costs are normalized        system some of its most directly visible intelligence, that is
+and a softmax function is applied to return the optimal trajec-     not necessarily optimal in some practical applications. For
+tory. The first control in the optimal trajectory is then sent to   example, exact route following behaviors have utility when
+the robot base controller to track. This process is conducted       following pre-planned routes through approved corridors in
+iteratively to refine the optimal trajectory each time. For         industrial settings where safety is paramount. Thus, it is
+the next time-step the trajectory is shifted, removing the          an important type of behavior to support in a complete
+first velocity which was sent to the robot base controller.         navigation framework.
+This improves performance by starting at the next predicted            These controllers do attempt to prevent collisions utiliz-
+location with the remainder of the as-of-yet not executed           ing the cost map information given. However, rather than
+portion of the trajectory. Thus, it is important that this          adaptively avoiding collisions, these controllers will simply
+controller runs at a sufficiently high rate with a sufficiently     stop without going around an obstacle in its way. They will
+large number of samples. Empirically, 1000 samples at 50 Hz         wait for a new global route to be selected or the obstacle
+or 2000 samples at 30 Hz yield good results and are easily          moves from its path. Due to their simplicity in evaluating
+achievable in this CPU-only implementation (Table II).              geometric, kinematic, and/or control-law derived functions,
+   MPPI behaviorally is a major improvement over reac-              these controllers can run well in-excess of 1 kHz.
+tive techniques. It is exceptionally effective at reacting to          Regulated Pure Pursuit is a variation on the traditional
+dynamic obstacles intelligently even when not explicitly            Pure Pursuit algorithm. Pure Pursuit finds a point on the
+modeled as dynamic in the cost map. Further, MPPI rarely re-        reference path a fixed-distance away from the robot to track,
+quires active recovery behaviors to assist getting out of local     known as the lookahead point [26]. This fixed-distance from
+minima due to becoming stuck or unable to make progress.            the robot can be interpreted as the chord of a circle with
+Its predictive back-out maneuvers when in close proximity           points on it (x, y)vehicle and (x, y)lookahead belonging to
+to static or dynamic obstacles is a considerable asset in high-     the positions of interest. When the path is represented in
+trafficked or confined environments to prevent the robot from       the vehicle coordinate frame, the curvature of the route,
+becoming stuck. Fig. 5 shows a similar behavior in isolation;       κ, to follow the lookahead point can be represented as
+whereas MPPI smoothly backs up and switches directions              κ = L2y2 , where y is the lateral coordinate of the lookahead
+point and L is the distance away from the robot. With an           maximum allowable speed when the curvature of the path
+arbitrary choice of translational velocity vt , we can compute     tightens based on two parameters, lambda and beta. While
+an angular velocity, va , required to drive the robot towards      [30] contains the complete equations involved, higher values
+the lookahead point via va = vt κ. This process is conducted       of beta cause the overall drop in velocity to increase, while
+iteratively resulting in the robot tracking a given reference      higher values of lambda cause the rate of velocity reduction
+path.                                                              to be increased.
+   Adaptive Pure Pursuit builds on this by dynamically                As with the RPP controller, the control law works on
+adjusting the lookahead distance based on the robot’s current      a single target pose (e.g. lookahead point). The controller
+velocity, typically in the form L = vt lt , where lt is the        works backwards through the global plan looking for the
+lookahead time gain [27]. This process has been shown              farthest point that is less than a maximum distance away from
+to improve tracking stability of reference paths and reduce        the robot and for which forward simulation of the control law
+tracking errors in high curvature turns.                           to convergence results in no collisions. Selecting a pose too
+   The Regulated Pure Pursuit controller builds on these           close to the robot can cause instability in the control law, so a
+foundations and expands the behavior one step further with         minimum distance may also be defined. When no target pose
+heuristic penalty functions on the desired translational ve-       can be found, the global planner is called upon to deliver a
+locity vt to regulate the speed of the robot in confined or        new path.
+precarious situations [28]. Rather than naively assuming a            Unlike the RPP controller, the Graceful controller can pro-
+fixed speed, which can be dangerous in practical applications,     duce smooth trajectories to non-trivial target poses without
+the robot is slowed when close to obstacles or the curvature       intermediate paths to follow due to its control-law based on
+of the turn exceeds configurable limits. This slows the robot      spirals, Fig. 6. RPP and all Pure Pursuit variants are simple
+before sharp blind turns into partially observable settings        geometric approaches that requires continual updating of
+(e.g. into or out of hallways and aisles) and reduces speed        goal poses to produce path following behavior; for any single
+when close to other objects where the risk of collision is         goal pose, computing a single v and ω to drive towards it.
+particularly high.                                                    Thus, the Graceful controller is a relatively more intel-
+   This has been shown in experiments to decrease stop-            ligent path tracker that can accomplish a variety of other
+ping distances for emergency stops, reduce overshoot and           tasks (e.g. docking or object following) - however RPP still
+undershoot in high-curvature turns, all without substantially      has great utility in exact path following behaviors, including
+increasing time-to-goal metrics. The minimum velocity of           respecting direction changes in feasible plans.
+the two heuristics is used, Eq. 3:
+
+                               (
+            vt                  vt dαprox
+                                      dO
+                                            dO ≤ dprox
+vcurv =              vprox =
+          rmin κ                 vt         dO > dprox
+                                                            (3)
+
+   where rmin is the minimum turning radius to apply the
+heuristic curvature heuristic, dO is the distance to the nearest
+obstacle, dprox is the proximity to obstacles to apply the
+curvature heuristic and α is a tunable weight. Additionally,
+direction changes (e.g. forward to reverse) computed by
+feasible planners are used in RPP to switch directions as
+necessary at pre-planned poses.
+   Graceful Controller aims to provide smooth path fol-
+lowing and automatic speed regulation for differential drive
+bases [29]. This trajectory planner is best used with a
+                                                                   Fig. 6.   Graceful Controller’s behavior achieving non-trivial local poses
+kinematically feasible global planner.                             [30].
+   This controller is based on a geometric control law de-
+rived for differential drive robot bases which generates only         A notable mode of operation is preferring final rotation.
+feasible commands [30]. The control implements a fast and          When enabled, the orientation of the final pose in the global
+slow subsystem. The slow subsystem is implemented as an            plan will be replaced by an orientation that is tangent to the
+Archimedean spiral that will take the robot from the current       path. The robot will follow the path to the final pose and
+pose to a target lookahead pose, based on a single parameter,      make a final in-place rotation to the desired heading. This
+k1. The fast control subsystem then determines the linear and      behavior avoids a possibly large divergence from the planned
+angular velocity required to follow the spiral based on the        path as well as large arcing behaviors.
+k2 parameter. The default values for k1 and k2 suggested by           Other features implemented in the controller include an
+original paper appear to work well on a variety of platforms.      orientation filter to clean up global plans and optional
+The translational speed is automatically reduced from the          inflation of the robot footprint at higher speeds to increase
+safety margins (having a similar effect to RPP slowing when
+close to obstacles).                                                          N
+                                                                              X −1
+   Rotation Shim is a re-usable component for robot plat-                            ωs (∆xi+1 − ∆xi )2 + ωd (xi − yi )2           (4)
+forms that may rotate in-place to rotate to a path’s relative                  i=1
+heading before beginning to track. This handles a frequent            where ω are configurable weights, x is the smoothed
+use case where controllers need to rotate a robot towards a        path and y is the original path. The first term is commonly
+newly planned path starting at another relative heading (e.g.      used and optimizes for smoothness, while the second term
+from a holonomic planner from Sec. II-A). Once the robot’s         penalizes adjusting the smoothed path too far from the
+heading is within a configurable angular distance from the         initial path. Together, they provide smoothed behavior in the
+path’s initial heading, the primary controller algorithm is        local neighborhood of the unsmoothed path resolving defects
+used to track the path. Controllers like DWB and MPPI are          such as sharp turns, jagged regions, and odd characteristics
+known to spiral out in a large arc towards the new heading         produced by gradient descent on discrete grid maps. This
+or perform partial 3-point turns, respectively, when requested     is born out in the experimental results - this smoother is
+to track a path at a substantially different relative heading to   quite fast and generates improved paths. However, because
+its starting pose. This enables high-quality in-place rotations    this will smooth out turning corners, it may increase the
+and removes the need for trajectory planners to process this       path costs relative to the initial plan as the smoothed result
+special, but common and sometimes difficult initial task.          becomes closer to obstacles (ex. Fig 7).
+                                                                      The newly optimized path has its via-point orientations
+           IV. OVERVIEW OF PATH S MOOTHING                         assigned as the tangent to the path. The smoothing terminates
+                                                                   when the parameter tolerance is achieved or the maximum
+    New in Nav2 are smoothing capabilities to refine global        time has been used. If a path is found to be in collision, the
+paths. Smoothers have long been employed in sampling-              last collision-free path from prior iterations is returned. Fig.
+based planning algorithms to interpolate between points and        7 illustrates the Simple Smoother for raw paths produced by
+smooth out irregular movements. While plans produced by            Theta* and Smac 2D-A*.
+search-based planners are typically less tortuous, many can
+be improved with additional refinements: 2D-A* can smooth
+jagged motions due to Moore search neighborhoods, Theta*
+can obtain continuous transitions where line segments meet,
+and feasible planners can benefit from curvature minimiza-
+tion.
+    Canonically, local trajectory planners have been successful
+in producing relatively smooth behavior from unprocessed
+global paths while considering dynamics and other con-
+straints. However, improving path quality can further reduce
+jitter in geometric and control law-based path tracking,
+as well as improve stability for predictive and reactive
+algorithms [31]. Thus, Nav2 provides three path smoothing
+algorithms to support holonomic and feasible planners -
+the Simple Smoother, Constrained Smoother, and Savitzky-
+Golay Smoother.
+    Table III show a comparison of the path smoothers, where
+                                                                   Fig. 7. Theta* and Smac 2D-A* paths smoothed by Simple Smoother.
+the costs reported are those in the cost map and smoothness is     Theta* depicted in green, Smac 2D-A* - in blue. Non-smoothed paths
+measured as |∆xi+1 −∆xi |, (∆xi = xi −xi−1 ). These are the        depicted in narrow lines, smoothed - in bold.
+results of an experiment composed of 1,000 randomly gen-
+erated start and goal poses in a representative cluttered home        Constrained Smoother is designed for refining the feasi-
+environment (e.g. furniture, hallways, open rooms, random          ble planners from II-B with a more developed optimization
+objects strewn about) using the Smac Hybrid-A* planner.            cost function taking into account curvature, cost fields, and
+These paths were then smoothed using the algorithms in             smoothness. It derives from the smoothing algorithm intro-
+this section and compared on a set of key metrics: compute         duced in Hybrid-A*, but rather than using a Voronoi Field, it
+time, path length, cost or distance from the nearest obstacle,     leverages the existing cost grid with obstacle inflation [14]:
+smoothness, and path curvature.
+    Simple Smoother is used to remove localized imperfec-                   N
+                                                                            X −1                        N
+                                                                                                        X −1
+tions such as oscillation, discontinuities, and turning tran-          ωs      (∆xi+1 − ∆xi )2 + ωc            (cost(xi , yi ))2
+sitions in the holonomic planners, typically in 1-6 ms. As                  i=1                          i=1
+                                                                                                                                   (5)
+its purpose is to remove localized irregularities or disconti-                NX−1
+                                                                                       ∆Φi
+nuities, it uses a simple gradient descent formulation which            + ωκ     σκ (        − κmax )
+                                                                                      |∆x i|
+minimizes the objective function:                                            i=1
+                                                               TABLE III
+                                                      PATH S MOOTHERS C OMPARISON
+
+
+                                      Time (ms)    Length (cm)    Ave. Cost    Max Cost     Smoothness     Ave. Turning Radius (m)
+               Unsmoothed Path            –          1150.47       12.26        129.46        76.45                  0.71
+               Simple Smoother           0.90        1115.39       18.89        132.89        58.79                  3.07
+             Constrained Smoother       20.82        1149.37        6.88        103.98        87.85                  2.59
+           Savitzky–Golay Smoother       0.06        1146.75       12.18        127.76        76.19                  2.29
+                An inter-modal algorithm selection summary can be found in Appendix I.
+
+
+
+
+                                                                        Fig. 9. Impact of increased cusp costs near direction-changing points. The
+                                                                        cyan path is the unsmoothed original path, purple is using the same ωc ,
+                                                                        and green uses ωcc near the direction change. The cost-field is shown as
+Fig. 8. Smac Hybrid A* path smoothed by Constrained Smoother. Non-      the background colored gradient near a rectangular obstacle [32].
+smoothed path depicted in narrow line, smoothed - in bold.
+
+                                                                           While the Constrained Smoother is targeting feasible
+   where ωs , ωc , and ωκ are the weights for the smoothness,           planners, it may also be used by the holonomic planners.
+cost, and curvature terms, respectively; σκ is a quadratic              The curvature term is removed when ωκ = 0 and may
+penalty function, κmax is the maximum feasible curvature,               operate on paths using only the cost and smoothness terms to
+∆Φi is the change in tangential angle, and cost(xi , yi ) is the        perform global-level optimization rather than only removing
+cost at a given cell. This objective function is solved using           localized imperfections and discontinuities. However, this
+Google Ceres, providing a number of linear solver options.              smoother is much more computationally expensive than the
+   This provides more comfortable paths for feasible planners           Simple Smoother, taking up to several seconds depending
+by minimizing curvatures (from their maximums in search)                on the length of the global path and the environment. Thus,
+to improve practical drivability while retaining kinematic              it is primarily recommended where maintaining feasibility
+feasibility. It also balances improving the smoothness of the           is a strict requirement. The smoother terminates when the
+path with shifting the plan into lower-cost regions. Since              parameter, function, or gradient tolerance is achieved, the
+it has no constraint on the original path coordinates, this             maximum number of iterations has been reached, or the
+smoother may make larger, global level changes to the path              maximum time has been used.
+beyond localized artifacts. Thus, the benchmark shows that                 Savitzky-Golay Smoother is a path smoother derived
+the Constrained Smoother generated paths typically longer               from the famed digital filter of its namesake [33]. This filter
+then the Simple Smoother, but with significantly reduced                analytically smooths regularly-spaced data using a sliding
+costs, while also improving on smoothness and curvature                 window polynomial function to remove noise from the
+from the original path. Fig. 8 demonstrates this visually               signal. This may be applied to path plans from search-based
+with a path of similar length, but maximizing distance from             planners due to their regular search intervals. This smoother
+obstacles and reducing path curvature.                                  is unique from the others in that it will not generally modify
+   When reversing path segments exist, ωcc (cusp-cost) is               the character of the input path. Rather, it will only smooth
+used instead of ωc within close proximity to cusp points.               out irregularities that can be modeled as noise within a 7-
+This value is strictly larger than ωc and incentivizes the              point window. This is most useful for gradient-descent path
+optimization problem to push direction-changing maneuvers               creation, as found in the NavFn Planner or potential field
+further away from obstacles for additional safety margins.              methods, which can generate irregularities due to performing
+Figure 9 shows an example of the impact of an elevated ωcc              gradient-descent on a discrete grid. This method will smooth
+in close proximity to cusp points.                                      ”noisy” outlier path points while retaining the intent from the
+planner. Fig. 10 shows a case in which NavFn generated a                  planning and collision checking algorithms to guarantee
+path with an unusually large numbers of jagged points, which              viable navigation in only free and known regions. The cost
+the Savitzky-Golay Smoother refines into a smooth global                  map acts as the planning algorithms’ configuration space
+path. Since the character of the path remains the same, the               [36]. Figure 11 shows an example of the key values in a
+changes in key metrics are often negligible. This smoother,               cost map.
+like the others, will also update the orientation vectors of                 The cost map provides a reasonably balanced approach
+each path point to be tangent to the final smoothed path.                 to the fidelity/efficiency trade-off on both low and high
+                                                                          power compute platforms. The grid data structure provides a
+                                                                          simple correspondence with the real world and also provides
+                                                                          constant time lookup. One drawback is that the memory
+                                                                          consumption required to maintain the cost map scales lin-
+                                                                          early with the number of cells. The use of Quad-trees to
+                                                                          represent occupancy grids has been proposed to alleviate this
+                                                                          scaling via multi-resolution data storage [37]. However, these
+                                                                          methods fail to recover substantial memory benefits when
+                                                                          cost map convolution or inflation are applied, or when the
+                                                                          density of obstacles in the environment leaves little open
+                                                                          space to represent with coarser-resolution quantizations -
+                                                                          while also introducing non-constant look-up times. While
+                                                                          these are useful developments for some applications, it is
+                                                                          most common for users in ROS 2 to apply a form of cost
+                                                                          map inflation and operate in restricted spaces. In practice, the
+                                                                          size of the cells in the cost map is 0.05 meters by 0.05 meters,
+                                                                          which typically is small enough to render the environment
+                                                                          with sufficient fidelity, but also large enough to not require
+                                                                          enormous amounts of computation.
+                                                                             While a two-dimensional cost grid discards a great deal of
+                                                                          potentially useful information, it has been applied repeatedly
+                                                                          to solve a great number of practical robotics challenges.
+Fig. 10. NavFn path (yellow) smoothed by Savitzky-Golay Smoother (red).   Further, it is common for perception algorithms populating
+                                                                          the cost map to maintain higher fidelity representations
+                V. OVERVIEW OF P ERCEPTION                                internally for modeling the environment, which are binned
+                                                                          or reduced to two dimensions for consolidation with other
+A. Overview                                                               algorithms. Maintaining a two-dimensional cost map enables
+   The key to achieving reactive behavior - where a robot                 the application of a broad number of highly-efficient plan-
+intelligently navigates in a dynamic environment - is using               ning, control, and collision checking techniques for arbitrary
+the robot’s sensors and semantic information to maintain a                types of robot systems.
+representation of the environment. ROS 2 employs cost or                     The process by which the cost map is updated and
+risk maps as the environmental model to consolidate the                   maintained in ROS 2 is the Layered Costmap [38]: an
+results of potentially many algorithms. A balance must be                 extensible, systematic way to update the cost map with many,
+achieved to create a sufficiently high-fidelity representation            configurable, and arbitrary perception algorithm results. The
+of the environment and be able to maintain that repre-                    Layered Costmap comprises an ordered list of dynamically
+sentation efficiently. Perception algorithms, sensor data, or             run-time loaded layers which each represent a different data
+semantic information about the environment are populated                  source, algorithm, or result. Each update cycle, the main cost
+into this world model for use in global path and local                    map is updated by polling each of these layers in turn to
+trajectory planning.                                                      populate the grid with new information.
+   Cost maps reduce the world model into a two-dimensional                   Any developer may write a costmap layer and include it
+grid, with each grid cell having a cost associated with it. Cost          on their robot system for their specific applications. Common
+maps evolved from the probability-based occupancy grids                   types of layers include: cost map inflation, sensor process-
+developed at Carnegie Mellon in the 1980s [34], [35]. The                 ing, semantic information, results from machine learning
+modern cost map was first described by Marder-Eppstein et                 detection or segmentation algorithms, and multi-robot coor-
+al [3], where the cost associated with each cell was an integer           dination. However, a set of common layers are provided by
+in the range [0, 255]. In general, planning algorithms will               ROS 2 applicable for a broad range of common applications.
+prefer paths with lower costs and avoid those with higher
+costs, but there are also special values for unknown and                  B. Costmap Layers
+occupied cells (255 and 254, respectively) to provide hard                   Static A map provides information about where obstacles
+constraints on robot behavior. These special values allow                 are known to be a priori, often from an offline mapping
+Fig. 11. Cost Map example in a practical home environment. Black are
+lethal obstacles, light blue are inscribed lethal costs due to robot dimensions,
+the gradient from red to blue are a cost potential field caused by the Inflation
+Layer, and grey are unknown cost cells. Free space with no potential cost
+are white, not shown.
+
+
+
+algorithm or other data source like blueprints. The static layer
+subscribes to an OccupancyGrid topic containing this
+information. It is common for the static layer to be the first
+                                                                                   Fig. 12. Visual demonstration of ray-tracing based marking and clearing
+costmap layer, providing the base information about the envi-                      in a grid map. Overlaid on a sandbox map, a low-resolution laser scan is
+ronment for later algorithms to modify. While the name im-                         raytracing freespace (white) from measurements (blue).
+plies non-changing, the static layer can have the map change
+over time as the result of map sharding over large spaces or
+updates to the environment due to continual mapping. There                         tracks the environment and ray-traces measurements in three
+is a separate subscription to a OccupancyGridUpdate                                dimensions. It is most useful for RGB-D, 3D laser scan-
+topic for efficient non-dimension changing updates to local-                       ners, or other non-trivially two-dimensional sensor streams.
+ized map information.                                                              Internally, it uses a voxel grid model the size of the cost
+   Obstacle The obstacle layer stores information from high                        map to represent the environment in a non-probabilistic way.
+accuracy sensors such as lasers and RGB-D cameras in                               This model scales linearly with cost map size, similar to the
+a two dimensional grid. Each point in the sensor data is                           two-dimensional grid, by maintaining the height dimension
+treated as a ray, originating from the sensor pose. That                           through manipulating the bits of an unsigned 32 bit integer.
+ray is ray-traced through the grid in two dimensions using                         Thus, its maximum height is limited. It is recommended to
+Bresenham’s algorithm, where the endpoint is marked as                             only track heights to the limit of what is useful (e.g., a home
+occupied and its path is marked as free space due to direct                        vacuum robot need not maintain a voxel grid > 1m off the
+visibility. Fig. 12 demonstrates this process visually. The 2D                     ground). The vertical resolution of the voxels is independent
+laser scanner produces measurements from obstacles which                           from their horizontal resolution, and is typically larger. The
+are marked in the grid in blue. Breshenham’s ray-casting                           three-dimensional data is projected down to two dimensions
+algorithm is used to clear out the visible free-space from                         for writing into the main cost map. As it conducts three-
+the sensor to the obstacle in white, while the remainder of                        dimensional raytracing, this layer is more computationally
+the grid is still unknown (grey). Due to the high accuracy                         expensive than the obstacle layer.
+of the sensors, these observations are treated as absolute,                           Non-Persistent Voxel The non-persistent voxel layer com-
+without the probabilistic calculations of occupancy seen in                        putes values in the same manner as the voxel layer, but does
+the 1980s. The simplification of logic also assists in quicker                     not persist the data from one update to the next. Thus, each
+computation. As a robot moves through the scene and/or                             iteration a new voxel grid is created to populate the cost map,
+more measurements are taken, it will dynamically generate                          then cleared.
+an occupancy map of the environment around it based on                                Spatio-temporal Voxel The Spatio-temporal voxel layer
+depth sensing.                                                                     (STVL) use a more refined data structure than the voxel
+   The two dimensional nature of this layer makes it ideal for                     layer, Fig. 13. It tracks obstacles in three-dimensions us-
+planar laser scanners, but may be overly constrained when                          ing OpenVDB, a sparse voxel grid library developed by
+using three-dimensional data. It may be necessary when                             Dreamworks Animation for movies such as How to Train
+working with low-accuracy or noisy sensors to pre-filter the                       Your Dragon and Puss in Boots [39]. Rather than ray-tracing
+data stream before processing in the obstacle layer to reduce                      to clear obstacles in the voxel grid, STVL uses a method
+noisy results in the cost map.                                                     called decay acceleration to maintain a representation of the
+   Voxel The voxel layer is similar to the obstacle layer, but                     environment based on the sensor’s measurement frustum and
+current measurements. As measurements are processed, the                     where ωscale is the cost scaling factor, do is the distance to
+timestamp of the data is added to the voxel belonging to                  the obstacle, costlethal is the lethal obstacle cost, and r is the
+the reading. If an active (e.g. occupied) voxel is within the             inscribed radius of the footprint. For circular robots, the cost
+sensor frustum and seen by new data, the time is updated. If a            map regions that are traversable after this is applied represent
+voxel is not viewed by new data, a decay acceleration factor              the configuration space of the robot. For non-circular robots,
+is applied to its time, quickening its removal due to lack                the cell cost for the largest distance between an edge of
+of current visibility. The frustum models are configurable                the robot and the center can be used with Eq. 6 to recover
+and currently support 3D lidar ’donut’ models and RGB-D,                  the cost at the center where full footprint collision checking
+depth, and similar sensors using a 6-plane bounding volume                is required. When the center cost is below that value, it
+defined by the minimum and maximum range and horizontal                   is known that the robot cannot be in collision. Thus when
+and vertical field of views.                                              using non-circular robots, it is important to still use inflation
+   For all voxels outside of the sensor’s frustum, a global               to optimize collision checking used in such algorithms as
+linear time decay is applied, usually 10-30 seconds. After                found in the Smac Planner framework described in II-B. It is
+voxels are expired due to either method, they are removed                 recommended to set a smooth inflation decay across the cost
+from the data structure. Thus, its storage size is only de-               map, rather than maintaining only steep costs near obstacles,
+pendent on the number of currently active and occupied                    as shown in Fig. 11.
+cells. The sparse voxel data structure is projected to two                   Keepout The keepout layer (a.k.a. keepout filter) uses in-
+dimensions for inclusion in the main cost map. This layer                 put masks to mark cells as obstacles. These masks are highly
+is most appropriate for robots operating in highly dynamic                configurable to contain a great deal of semantic information
+environments with a high degree of sensor coverage. It was                and interpreted through CostmapFilterInfo into cost
+created to resolve issues with discrete cell ray-tracing which            values to apply to the grid. These need not be only binary
+occasionally left uncleared obstacle cells in highly dynamic              obstacle information, but also setting a range of costs to
+environments with many moving agents.                                     weight certain regions over others.
+                                                                             Speed The speed limiting layer uses the same filters API
+                                                                          as the keepout zones, but embedding maximum speeds as
+                                                                          either percentages or absolute values in the filter masks. This
+                                                                          layer allows users to specify zones at which a robot should
+                                                                          slow down, such as when entering or exiting aisles.
+                                                                             Binary The binary layer uses the same filters API as previ-
+                                                                          ously introduced, but embeds binary behavioral triggers into
+                                                                          a spatial mask. When the cost value crosses the threshold, a
+                                                                          ROS message is sent to a client server to indicate a change in
+                                                                          binary state. An illustrative example would be to set spatial
+                                                                          bounds conveying locations where it is and is not appropriate
+                                                                          to stream camera feeds to a robot operations center. There
+                                                                          may be regions of homes (such as bathrooms) and other
+                                                                          facilities where remote monitoring of camera data would
+Fig. 13. STVL’s internal sparse 3D voxel grid representing shelves in a
+retail environment [40].                                                  breach legal or ethical bounds. This layer allows the native
+                                                                          embedding of spatial constraints to trigger binary actions.
+   Range The range layer processes data from Infrared,
+Sonar, and Ultrasonic sensors. Due to the noise inherent                             VI. OVERVIEW OF B EHAVIOR T REES
+to these types of sensors, the range layer tracks occupancy                  In this section, we describe the architecture of how robotic
+using a probabilistic model in which only cells with high                 components previously described are assembled to create
+confidence predictions are written into the main cost map.                autonomous navigation. Configurable behavior trees (BTs)
+It has support for both fixed reading (e.g. binary detection              are used to orchestrate internal robot navigation tasks such
+of obstacles) or variable reading sensors. The probability of             as planning, control, high-level behaviors, recoveries, and
+an obstacle in a cell is calculated using the static properties           more in Nav2 [2], [42]. This contrasts historical uses of
+of the sensor (range of view, maximum reliable range and                  state machines and hard-coded logic for designing navigation
+sensor variance), the sensor reading itself, and the angle and            systems: typically passing a path to a path tracker with hand
+distance of the cell relative to the sensor origin [41].                  programmed behaviors [3]. While it is possible to model
+   Inflation The inflation layer uses the occupancy infor-                most BT configurations with hierarchical state machines (and
+mation from the other layers to add an inflated exponential               vise versa), behavior trees have been the subject of much
+decay function around untraversable regions. It does this by              interest and are increasingly preferred from the results of user
+iteratively expanding from known obstacles to a configurable              studies. The BT Navigator is the highest level component of
+distance, applying Eq. 6:                                                 Nav2, taking requests and processing them via the behavior
+                                                                          outlined in the tree. Each behavior tree is modeled as an
+         cost(x, y) = (costlethal − 1) e−ωscale (do −r)            (6)    XML file comprising many BT nodes which are dynamically
+loaded at run-time. The behavior tree can be specified per-             replanning at a fixed frequency4 , on distance traversed5 ,
+run so a system may take on different behaviors or tasks.               proportional to robot speed6 or when the goal is updated7 .
+   Most BT nodes will invoke a remote server over a ROS 2               However, it is sometimes desirable for robotic applications to
+interface (action, topic, service) to compute a value for               not dynamically replan (except when strictly required due to
+component-level modularity, although this is not required.              a potential future collision) to produce predictable behavior8 .
+A growing number of primitive BT nodes are provided by                     Practical BTs typically include recovery behaviors to
+Nav2, shown in Table IV, that may be used to develop useful             resolve the vast majority of errors that may occur during
+robot behaviors. Note that users may easily create and use              navigation due to dynamic scenes, uncertainty, or confined
+their own BT nodes and trees.                                           environments. ROS 2 includes BTs that invoke context-
+                                                                        specific actions in case of particular component failures.
+                                                                        They also contain a global recovery branch for handling
+                           TABLE IV                                     system-level failures9 . More advanced BTs include mixed-
+                I NCLUDED B EHAVIOR T REE N ODES                        replanning10 and goal patience11 to resolve an assortment
+                                                                        of commonplace behavioral issues, such as oscillation due
+        Behavior Tree Node                   Description                to frequent replanning and handling temporary blockages,
+                Action                                                  respectively.
+         Navigate To Pose              Navigate from A to B
+     Navigate Through Poses       Navigate from A-Z through B...Y          The navigate-through-poses configurations provide a sim-
+     Compute Path To Pose⋄               Plan from A to B               ilar behavior but contain hard pose constraints for via-points
+  Compute Path Through Poses⋄      Plan from A-Z through B...Y          to navigate through on the way to a final goal. These
+          Follow Path∗ ⋄                     Follow Path
+           Clear Costmap            Clear environmental model
+                                                                        behavior trees make use of the ‘Compute Path Through
+              Back Up∗                         Reverse                  Poses’ planning node rather than ‘Compute Path To Pose’. In
+                Spin∗                          Rotate                   addition, this class of BT removes waypoints passed so that
+        Drive On Heading∗                  Drive forward                subsequent replanning iterations contains only future looking
+            Smooth Path                     Smooth path
+      Remove Passed Goals           Remove goals passed B...Y           constraints12 . These configurations may also contain different
+            Truncate Path             Truncate path near goal           replanning mechanics, recoveries, and advanced features as
+                Wait∗                           Pause                   described prior.
+     Reinitialize Localization           Reset localization
+                                                                           The BT tasks are not required to be represented by a goal
+         Assisted Teleop∗         Tele-op with collision avoidance
+              Condition                                                 or via-points - or even full autonomy. Instead, a BT may
+         Distance Traveled         If a distance has been traversed     be only interested in following a particular object13 with a
+            Goal Reached                 If the goal is reached         collision free path or exploring new areas. Other examples
+            Goal Updated                If the goal has changed
+       Initial Pose Received              If initial pose is set
+                                                                        include algorithm assisted remote tele-operation, odometry
+           Is Battery Low           If battery too low to continue      calibration experiments14 , and complete-coverage tasks.
+            Is Path Valid              If path is not in collision         As an illustrated example, Fig. 14 shows the mixed-
+               Is Stuck                 If not making progress          replanning navigate-to-pose behavior tree with recoveries
+   Is Transformation Available          If transform is possible
+          Is Time Expired                  If time has passed           described in footnote 10. The left branch from the root
+       Path Expiring Timer          Timer before last path is stale     node contains its navigation logic, while the right is used
+              Decorator                                                 for system-level recovery. If a new goal is received during
+           Rate Controller          Control flow by set frequency
+        Distance Controller       Control flow if distance has passed
+                                                                        system-level recoveries, it will abort and reattempt naviga-
+         Speed Controller         Control flow proportional to speed    tion. There are also context-specific recoveries clearing the
+           Single Trigger             Trigger control flow once         global and local environmental models within the navigation
+    Path Longer On Approach       If path too long on goal approach     branch when path planning or local trajectory planning fail,
+            Goal Updated             Control flow if new goal set
+            Goal Updater          Bypass and update goal over topic     respectively. In the navigation branch, mixed replanning is
+               Control                                                  set to compute a new path if any of the following conditions
+         Pipeline Sequence             Flow-of-water sequence           are met: the path has expired after its duration of use, a
+              Recovery            Executes second node if first fails   new goal has been requested, or the path is found to be
+            Round Robin           Ticks children in round-robin style
+                                                                        invalid due to sufficiently increased costs or collision. Thus,
+       ∗ Includes complementary cancel task node
+       ⋄ Includes complementary algorithm selector node                 this BT will immediately replan if the path or goal requires
+                                                                          4 navigate to pose w replanning time.xml
+                                                                          5 navigate w replanning distance.xml
+                                                                          6 navigate w replanning speed.xml
+   Nav2 provides a number of behavior trees comprising                    7 navigate w replanning only if goal is updated.xml
+these nodes. These fall into three major categories: navigate             8 navigate w replanning only if path becomes invalid.xml
+to pose, navigate through poses, and task-specific applica-               9 navigate to pose w replanning and recovery.xml
+tions. Each have several customizations available to provide              10 nav to pose with consistent replanning and if path becomes invalid.xml
+                                                                          11 navigate to pose w replanning goal patience and recovery.xml
+intelligent behavior in various situations.
+                                                                          12 navigate through poses w replanning and recovery.xml
+   The navigate-to-pose behavior trees provide basic pose-                13 follow point.xml
+
+to-pose navigation. The BTs have support for consistent                   14 odometry calibration.xml
+                                                                         Within this formulation, the odom to base link trans-
+                                                                      form can be generated by integrating a robot’s wheel encoder
+                                                                      data to provide a pose estimate that can be used for local
+                                                                      control of the robot. That pose will drift over time, however,
+                                                                      so REP 105 also specifies a map to base link transform15
+                                                                      that represents a drift-free estimate of the robot’s pose. This
+                                                                      pose is useful for carrying out operations such as global
+                                                                      planning. However, it is subject to discontinuities, making it a
+                                                                      poor choice for control algorithms. The map to base link
+                                                                      transform can be provided through a localization package,
+                                                                      described in more detail in section VIII.
+                                                                         Alternatively, both transforms can be provided through
+                                                                      the use of state estimators. In the case of the odom to
+                                                                      base link transform, this would typically mean fusing
+     Fig. 14.   Mixed-replanning navigate-to-pose behavior tree 10.
+                                                                      wheel encoder data with other continuous sources like angu-
+                                                                      lar velocity data from an IMU. For the map to base link
+                                                                      transform, the pose estimate from the localization package
+it, but also refine periodically (typically 5-30s). This enables
+                                                                      might be fused with other global pose estimates or with
+responsiveness to urgent needs while providing refinement as
+                                                                      the same sources fused in the odom to base link state
+new information is processed. Dynamic replanning is under
+                                                                      estimator. This is useful if the localization package produces
+a rate controller to limit the replanning rate slower than the
+                                                                      infrequent or irregularly-timed pose measurements, as it
+tree’s tick rate (100 Hz).
+                                                                      enables the global pose estimate to be generated at a fixed
+    While not included in Fig. 14, it is advisable to leverage
+                                                                      frequency.
+algorithm selector nodes as a recovery action to recompute
+                                                                         While there are a myriad of algorithms for performing sen-
+a key function (path planning, trajectory planning) with
+                                                                      sor fusion, two well-known and robust classes of approaches
+another implementation. When backup implementations and
+                                                                      are Kalman filtering and factor graphs, both of which have
+contextual recovery actions are well selected for an appli-
+                                                                      implementations within the ROS 2 ecosystem.
+cation, they can resolve most issues. Further, the algorithm
+selectors allow a system to utilize many algorithms in their          A. State Estimators
+most useful contexts, rather than only a single method.                  Robot Localization In the 60 years since its introduction,
+    When designing behavior trees, it is prudent to create            Kalman filtering has become one of the best-known and
+many independent nodes which are assembled in the tree’s              widely adopted approaches to state estimation [45]. The
+configuration for easy reusability and/or later customization.        Kalman Filter algorithm manages the state estimate in two
+It is also wise to place as much logic in the tree as possible, in    stages: predict and update. While the original Kalman Filter
+contrast to client servers, to provide the maximum flexibility.       works for linear systems, the Extended Kalman Filter (EKF)
+These principles were followed in the BTs outlined in this            addresses this shortcoming by linearizing the state transition
+section, which has allowed them all to be composed from               function f and measurement model h around the current state.
+the same set of BT nodes from Table IV.                               It then uses the resulting Jacobian matrices Ft and Ht in
+                                                                      place of the original formulation’s state transition matrix F
+          VII. OVERVIEW OF S TATE E STIMATION                         and measurement model H, respectively in Eq. 7.
+   For a mobile robot to successfully navigate through its
+environment, it needs to maintain an estimate of its state                                            ∂f
+                                                                                                   Ft =
+(pose, velocity, etc). Such estimates are typically obtained                                         ∂x̂t−1
+                                                                                                                               (7)
+through sensor fusion, or the process of determining a                                                ∂h
+                                                                                               Ht =         .
+robot’s state relative to a reference frame given many noisy                                         ∂x̂t−1
+sensor measurements, such as IMUs, wheel encoders, pose                  A further extension known as the Unscented Kalman Filter
+measurements, GPS, and more. The output of this fusion is             (UKF) eschews the computation of Jacobian matrices in
+an approximation of a robot’s state variables and typically a         favor of using a set of sigma points to carry out state
+measure of confidence regarding the estimate.                         projection [46]. Each sigma point is effectively the most
+   ROS Enhancement Proposal (REP) 105 establishes the                 recent system state estimate x̂t−1 , but with one dimension
+coordinate frames for common types of robotic systems to              perturbed in proportion to the current covariance matrix
+ensure interoperability of components [43]. The transforma-           P̂t−1 . Each sigma point is then projected through f and the
+tion tree containing these coordinate frames is populated by          predicted state x̂t and covariance P̂t are recovered.
+the algorithms of this and the next sections and managed by
+                                                                         15 Technically, the tf library does not permit a given coordinate frame
+the tf library [44]. tf is utilized by a litany of applications
+                                                                      having two parents, so we instead use the map to base link transform
+to transform sensor data or relative vectors through time-            and the inverse of the odom to base link transform to generate a map
+varying reference frames - not simply for robot state tracking.       to odom transform.
+   In ROS 2, the robot localization (r l) package pro-                            without any velocity or pose reference will lead to
+vides implementations of both an EKF and UKF [47].                                unbounded growth in that dimension.
+The package supports an unlimited number of sensor                              • Start with the minimum set required to provide a
+inputs from common ROS message formats such as                                    reference for every linear and angular dimension, and
+Odometry, Imu, PoseWithCovarianceStamped, and                                     then add inputs one-at-a-time.
+TwistWithCovarianceStamped. Users also have the                                 • Take time to understand the coordinate frames of sensor
+ability to control which dimensions from any given mea-                           data. Make sure that transforms are available for all data
+surement source will be fused in the final state estimate. For                    that is not provided in the principal coordinate frames.
+example, if an IMU sensor produces faulty heading data due                      Fuse The nonlinear state estimation problem can also be
+to magnetic interference from the magnetometer, that dimen-                  solved through iterative numerical optimization. It can be
+sion can be excluded when fusing the IMU measurements.                       factored into the following least-squares form:
+Pose data can also be fused differentially, i.e., consecutive
+poses can be converted into velocities before being passed                                                      X  y − g(x) 2
+                                                                                                                         i
+to the filter. This feature is useful when attempting to fuse                                 x̂t = arg min                   1                       (9)
+                                                                                                            x                Σ2
+                                                                                                                  i
+world-referenced pose data from sources that do not agree
+with one another.                                                               where x̂t is the optimal state estimate. We obtain it
+   r l uses an omnidirectional three-dimensional kinematic                   by finding the state that minimizes the sum squared error
+state transition function to estimate the 15-dimensional state               between each observation yi and the transformed state g(x),
+vector given in Eq. 8.                                                       weighted by the inverse square root of the covariance Σ.
+                                                                                Factor graphs represent this formulation graphically, as
+          x = [x, y, z, ϕ, θ, ψ, ẋ, ẏ, ż, ϕ̇, θ̇, ψ̇, ẍ, ÿ, z̈]   (8)   shown in Fig. 15. Two types of nodes are present in the
+                                                                             graph: variable nodes represent specific quantities that we
+   While the package does not support any other kinematic                    want to estimate (e.g., the robot’s pose at time t) and
+models, common models like the unicycle model can be ob-                     factor nodes represent constraints on those variables (e.g.,
+tained by clamping all three-dimensional state variables (as                 kinematic constraints via a motion model). In Fig. 15, the
+well as ẏ and ÿ) to 0. Furthermore, kinematic models such as               variable nodes are the states x1 through x4 , with the square
+Ackermann steering can be used if the measurement source                     factor nodes representing constraints between the connected
+provides absolute pose data and the appropriate process noise                states. This example shows a common use case for sensor
+covariance matrix entries are increased to force the filter to               fusion, in which asynchronous measurements arrive from dif-
+trust measurements more than the filter. In practice, this is                ferent sensors. Each sensor measurement creates a constraint
+sufficient for most mobile robotics applications and the most                between two states, leading to two separate sets of vertices.
+common method of sensor fusion for state estimation in ROS                   In order to unify the graph, we create kinematic constraints
+over the last half-decade.                                                   between x1 and x2 , x2 and x3 , and x3 and x4 . The graph is
+   The large number of parameters available to the user in                   then optimized to find the most likely values for the states.
+r l can be used to tune the filter’s performance and tailor it
+to the user’s application. In general, the following practices
+are recommended:
+   • If operating in a planar environment, set two d mode
+      to true. While the filter will still continue to perform
+      full 3D state estimation, dimensions outside SE2 will
+      be set to 0.
+   • For differential drive platforms, the only body-frame ve-
+      locities that are typically relevant are ẋ and θ̇. However,
+      the 0 value for ẏ that is produced by the wheel encoder               Fig. 15. Example factor graph for a system with asynchronous measure-
+      odometry should be fused in the filter. This prevents the              ments. A sensor measurement from a wheel encoder creates a constraint
+                                                                             between state x1 and x3 . A measurement from an IMU creates a constraint
+      filter from artificially generating non-zero ẏ in the state           between state x2 and x4 . The disjoint graphs are then connected via unicycle
+      as the robot goes around turns.                                        model kinematic constraints.
+   • Every linear and rotational dimension must have a
+      reference (i.e., it must be measured by one of the user’s                 The ROS 2 fuse package provides a factor graph frame-
+      sensor inputs). This measurement can be provided via                   work that can be used in state estimation, mapping, calibra-
+      absolute pose data or velocity data. Prefer pose sources               tion, and more [48], [49]. Within fuse, each factor node can
+      when fusing only a single input in that dimension.                     represent a measurement constraint or a kinematic constraint.
+      Prefer one pose and many velocity sources when fusing                  Measurement constraints represent the error term in Eq. 9 as
+                                                                                 1
+      multiple sources for a dimension.                                      R− 2 (zi − h(x)), where h, the sensor model, is a function
+   • While the filter accepts linear acceleration measure-                   that transforms the variables in the constraint into the space
+      ments, they are generally insufficient for state estima-               of the measurement. The covariance matrix R controls how
+      tion, as the double-integration of linear acceleration                 much weight the error term in question carries during the
+optimization process. A small covariance would result in the       constraints to the existing graph. These new variables and
+measurement being heavily weighted.                                constraints are optimized over via the optimizer to compute
+   Kinematic constraints represent cost in the form                optimal values. Finally, the publisher will return the results
+    1
+P− 2 (xi − f (xt−1 )), where xi is the current value of the        over ROS 2 topics to interested nodes.
+variables connected to the constraint and the function f is           fuse has a number of advantages over r l, both due to
+a state transition function that projects the variable values in   software design and affordances provided by factor graphs:
+xt−1 forward in time.                                                 • fuse is more flexible and extensible. In addition to
+   fuse makes extensive use of dynamically loaded plugins to             r l’s support of an arbitrary number of sensors, fuse’s
+manage the highly configurable graph construction and opti-              plugin-based architecture allows configuration of the
+mization process. A number of plugins are already provided               state vector, motion, and sensor models.
+for common mobile robotics needs, but users may create and            • Relative pose measurements are better supported in fuse.
+utilize their own plugins for custom requirements. Each type          • Linearization errors are reduced in fuse at every iteration
+of plugin are detailed below.                                            in the optimization.
+   Variables: Definitions of the quantities to be optimized.          • fuse can be used for applications outside sensor fusion,
+A variable may represent a single value, e.g., x posi-                   mapping, and calibration; one such application is robot
+tion, or it may represent more complex data, such as                     control.
+a timestamped two-dimensional pose. For example, the
+                                                                      However, these features come at an increased compute
+Orentation3DStamped variable comprises a 3D orien-
+                                                                   cost. The experiments in section VII-B suggest that fuse
+tation (represented as a quaternion) with an associated time
+                                                                   could require as much as 4x the CPU of r l. As r l is fairly
+stamp.
+                                                                   lightweight, this increase is generally acceptable for the vast
+   Constraints: Connections for variables in the fac-
+                                                                   majority of applications.
+tor graph. Each constraint is responsible for generating
+                                                                      For those particularly resource-constrained applications,
+some cost given the connected variables. These costs
+                                                                   there are a number of parameters that may be tuned to
+are then minimized during optimization. For example,
+                                                                   improve compute time. Reducing the length of the smoothing
+the RelativePose2DStampedConstraint produces a
+                                                                   window of the fixed-lag smoother and the frequency of up-
+cost for two poses in the graph that is proportional to the
+                                                                   date can improve the performance. Further, fuse uses Google
+difference between those poses and the measured difference
+                                                                   Ceres’ automatic differentiation in many of the plugins to
+as provided by a sensor measurement.
+                                                                   compute Jacobians [50]. While this is convenient, it is not
+   Sensor Models: Models of variables with associated con-
+                                                                   as efficient as analytically derived Jacobians, which Ceres
+straints generated from received sensor data. The variables
+                                                                   also supports.
+and constraints are then passed to the optimizer. For exam-
+ple, the Imu2D sensor model produces the relevant two-             B. Comparison
+dimensional orientation and angular velocity data variables
+to add to the graph, as well as constraints on those variables        To compare the two state estimation systems in ROS 2,
+as given by the measurement itself.                                an experiment was designed and run on a 3.8 GHz AMD
+   Motion Models: Models of kinematic constraints between          Ryzen 5800x CPU. A mobile robot equipped with wheel
+timestamped variables. These are generated on request and          encoders, an IMU, and a laser scanner was driven along a
+passed to the optimizer. For example, the Unicycle2D               541-meter long route through a commercial environment to
+kinematic model generates a constraint between two pose            collect a dataset, ending within 10 cm of the starting pose.
+variables in the graph. If those poses are not feasible given a    The odometry and IMU data was collected at 25 Hz. r l’s
+unicycle kinematic model, the constraint will generate non-        EKF node and fuse’s fixed-lag smoother node each fused
+zero cost.                                                         linear and angular velocities from the wheel encoders and
+   Optimizers: Build and optimize the graph. The core nodes        angular velocities from the IMU. ROS 2’s amcl package
+in fuse are effectively wrappers around optimizer plugins.         provides the ground-truth information (Sec. VIII-A). The
+For example, the primary state estimation node in fuse is          fixed lag smoothing window in fuse was set to 0.5 seconds
+known as the fixed-lag smoother. It wraps an optimizer of          and the covariance was extracted from the graph at 1 Hz.
+the same name.                                                        The results can be seen in Fig. 16 and Table V. At the
+   Publishers: Extract relevant quantities from the optimizer      end of the path, the fuse estimate was 1.44 meters closer to
+and publish the ROS 2 messages containing results. For ex-         the ground truth position than the r l estimate, though both
+ample, the Pose2DPublisher publishes the most recent               estimates were well below 5.4 meters, or 1%, of the ground-
+optimized pose and covariance from the graph as both a             truth pose. The CPU usage for fuse was approximately 3.7x
+geometry msgs/PoseStamped ROS 2 message as well                    that of r l, with a slightly larger standard deviation.
+as a transform to be consumed by other nodes via tf.
+                                                                      VIII. OVERVIEW OF L OCALIZATION AND M APPING
+   Each iteration, sensor model plugins will receive sensor
+data and create constraints based on them. The optimizer             Localization is the process by which the robot determines
+will receive these constraints and request the motion model        where it is with respect to a global frame of reference. As
+plugin to generate constraints to connect the sensor model         opposed to state estimation, this typically occurs at a reduced
+                                                                      TABLE V
+                                                          S TATE E STIMATORS C OMPARISON
+
+
+           State Estimator     Update Frequency (Hz)     Total Distance (m)    Total Error (m)   Error (% Distance Traveled)     CPU %
+          robot localization            30                     542.16                4.25                   0.78               1.38 ± 1.17
+                 fuse                   20                     542.46                2.81                   0.52               5.19 ± 1.37
+
+
+
+
+                                                                              localization, the distribution represents the probable pose of
+                                                                              the robot.
+                                                                                 If an initial pose is not set, a particle filter may initialize
+                                                                              the particle cloud by uniformly distributing it throughout the
+                                                                              space. Otherwise, the particles are distributed around the
+                                                                              provided start pose of the robot. At each update step, the
+                                                                              particles are projected using a kinematic model of the robot
+                                                                              with noise perturbations. The particles are then weighted
+                                                                              based on the likelihood of their sensor observations at that
+                                                                              pose. The filter may then resample the particles, that is,
+                                                                              generate a new particle distribution by selecting particles
+                                                                              from the existing distribution.
+                                                                                 The amcl (Adaptive Monte Carlo Localization) package
+                                                                              contains a pure and fully-parameterized implementation of
+                                                                              the grid particle filter localizer, Fig. 17 [53]. The package
+Fig. 16. Three state estimates of the same circuitous path. Black path:       exposes numerous parameters for controlling the full behav-
+amcl-generated ground truth path; dotted red path: estimate of the path       ior of the filter: minimum and maximum particle counts,
+fusing only wheel encoder and IMU data for r l; dashed blue path: estimate    resampling periods, statistical weights, motion model noises,
+of the path using the same data, but fused via the fuse package.
+                                                                              and more. State projection is handled via a motion model
+                                                                              that supports differential drive or holonomic bases with
+                                                                              configurable characteristics. Particle weight assignment is
+rate and provides corrections to odometric drift. A localiza-
+                                                                              performed by taking the current laser scan of the environment
+tion system attempts to match its sensor data to a known
+                                                                              in the sensor frame, transforming it based on the pose of each
+model of the environment or build the model simultaneously,
+                                                                              particle, and then attempting to match the scan to a rastered
+e.g., Simultaneous Localization and Mapping (SLAM). Com-
+                                                                              map of the environment. Particles that have better matches
+monly, localization is preformed using 2D laser scanners, 3D
+                                                                              with the map will therefore have higher weights, and will be
+lidars, or cameras - though techniques exist using more exotic
+                                                                              more likely to be selected in the next resampling step.
+and/or mixtures of sensors. Localization’s output is a pose
+and confidence relative to a world model. This pose solves                       Like the odometry model, the laser model is highly
+the REP 105 portion of the tf transformation tree from map                    configurable. Two main models are supported: the beam
+to odom.                                                                      model performs ray tracing from each particle to generate
+   In ROS 2, the standard localization and SLAM imple-                        a model laser beam, and then compares the ideal beam with
+mentations continue to be 2D laser scanner techniques due                     the sensed laser measurements [54]. The beam model models
+to their robustness in dynamic and changing environments                      four sources of error due to physical phenomenon with the
+over long durations. While strides have been made in visual                   laser scanner and environment: sensor measurement noise,
+techniques, the field is still rapidly evolving and even rela-                changes in the environment, failures to measure, and random
+tively mature methods like ORB-SLAM3 are insufficiently                       noise. The likelihood field model diffuses the map via a
+robust for large classes of practical robotics tasks [51]. They               Gaussian distribution into a lookup grid such that each cell
+are generally sufficient for a number of small-scale or short-                represents the range from that cell to the nearest occupied
+duration applications, but official ROS 2 support requires                    cell in the original map [55]. Each laser scan point is then
+further substantive improvements.                                             projected onto the lookup grid, and the score for the scan is
+                                                                              proportional to the sum of the values of the cells into which
+                                                                              the projected points fall. This models sensor noise using the
+A. Localization
+                                                                              Gaussian distribution, but also explicitly models errors from
+   AMCL One popular approach for solving the localization                     sensor failures and random measurements in the same way as
+problem is through the use of particle filters [52], which                    the beam model. This can be more optimal computationally
+enable robust state estimation in dynamic environments and                    as well as resolve lack of smoothness concerns with the beam
+in the presence of noisy sensor data. Particle filters repre-                 model due to many small, dispersed occupancy grid entries
+sent non-Gaussian statistical distributions using a discrete                  in complex settings. The performance characteristics of the
+set of hypotheses (particles). In the case of mobile robot                    amcl package is well researched and can achieve localization
+accuracies of 5 cm or better in many practical environments                      representing the probability of occupancy. They also perform
+[56].                                                                            mapping and localization simultaneously, e.g. SLAM.
+                                                                                    Cartographer provides real-time simultaneous localiza-
+                                                                                 tion and mapping in both 2D and 3D for multiple platforms
+                                                                                 and sensor configurations using pose-graph optimization
+                                                                                 [60]. Laser scans are added into submaps over short periods
+                                                                                 of time to create locally accurate maps with current measure-
+                                                                                 ments. Scan matching is performed on these local submaps
+                                                                                 and the scan is inserted into the submap at its best estimated
+                                                                                 pose. When a submap is completed, it takes part in a loop
+                                                                                 closure process which compares submaps and local scans to
+                                                                                 refine the global occupancy grid model.
+                                                                                    While Cartographer is a good option for some users, it is
+                                                                                 worth noting that out-of-the-box results with Cartographer
+                                                                                 are typically poor. It is possible to achieve 3-5 cm accu-
+Fig. 17. AMCL’s particle cloud localizer in a warehouse environment with         racy using Cartographer, but requires extensive professional
+a laser scanner. Map in black, laser scan readings in red, particles in green,
+and the robot’s pose as the frame with black circular footprint.
+                                                                                 tuning using hardware platforms with high-quality odom-
+                                                                                 etry. Further, the original author’s organization has halted
+   GPS Localization Localizing a robot using GPS sensors                         development and support. ROS 2 support is managed by a
+is a popular approach for outdoor robot platforms. While                         community effort but has not received significant attention
+subject to drift in some environments, GPS data provides                         due to the complexity of the codebase. Thus, it is difficult
+a globally unambiguous positional reference and reduces                          to recommend the use of Cartographer.
+the need for techniques that rely on expensive sensors. The
+key to integrating GPS data in a robot’s state estimate is
+the computation of the transform between the robot’s world
+frame (e.g., the map frame as specified in REP-105) and the
+GPS frame, most commonly the WGS-84 geodetic datum
+[57].
+   Generating this transform requires knowledge of the
+robot’s pose in a world frame, the robot’s latitude and
+longitude as provided from a GPS sensor, and the robot’s
+heading in an earth-referenced frame, as might be obtained
+via an IMU with a magnetometer.
+   The robot localization package described in Section VII-
+A provides the NavSat Transform Node, whose purpose is to
+calculate this transformation. It does this by converting the                              Fig. 18.   Map generated by SLAM Toolbox [61].
+GPS position and earth-referenced heading into a position in
+the Universal Transverse Mercator (UTM) coordinate frame                            SLAM Toolbox is a set of tools and capabilities for 2D
+[58]. From there, the transform to the robot’s world frame is                    SLAM built upon the OpenKarto SLAM library [62]. SLAM
+trivial. The output of NavSat Transform Node is a pose that                      Toolbox is also a pose-graph optimization method. It matches
+can be fused into the robot’s state estimate or directly used                    incoming sensor readings with a recent rolling buffer of scans
+for localization with respect to the robot’s world frame. The                    to provide a corrected pose. This uses a correlation grid
+accuracy of GPS localization is limited by the environment,                      constructed from the buffer of local measurements to match
+quality of the GPS receiver, and whether RTK (Real-time                          the incoming scan at a coarse half-resolution, followed up
+kinematic) GPS corrections are available in the area. When                       by full resolution for fine tuning the results.
+RTK is available, accuracies can reach 2 cm or better [59].                         The incoming scan with the initially corrected pose is then
+                                                                                 evaluated for loop closure. Candidate scans are found which
+B. Mapping                                                                       are near the incoming measurement but not connected locally
+   Mapping solves the fundamental problem of how a robot                         in the graph. The candidates are matched against the scan at
+understands its environment. It uses sensor data and poten-                      a coarse resolution. If the match is strong enough, a full
+tially robot state estimates to generate a globally accurate                     resolution match is performed on the fine correlation grid. If
+model of the world. This world representation is used for                        again the match is sufficiently strong, a constraint is added;
+many tasks, including global planning and localization, when                     then the pose-graph optimization process is performed.
+not using GPS or other global positioning systems. Suc-                             Changes were made to the OpenKarto library to increase
+cinctly, mapping is the process of learning a world’s contents                   speed of scan matching using multi-threading and replace
+from sensor data. For mapping techniques in ROS 2, the map                       the Sparse Bundle Adjustment with Google Ceres to provide
+is represented as an occupancy grid, or a grid map of cells                      more flexible optimization settings. It can reliably map
+spaces greater than 100,000 sq ft in real-time (fig. 18),        servers allowing a user to have a ‘pythonic’ user experience.
+enables serialization of maps for continued mapping, allows      It may be used to create autonomy systems leveraging
+for manual manipulation of the pose-graph, and comes with        Nav2 (or bypassing BT Navigator to define custom hand-
+several operating modes.                                         engineered logic) in Python3. It contains a cost map API for
+                                                                 handling incoming occupancy grid messages and querying it
+            IX. OVERVIEW OF K EY U TILITIES
+                                                                 for information.
+   This section provides overviews of new and unique utili-         Waypoint Follower is a server used to request navigation
+ties in ROS 2. They contribute intuitive user interactions and   to many waypoints and performing some action at each. The
+create safer robotic systems by commanding, regulating, and      waypoint follower uses task executor plugins to complete
+validating the autonomous navigation system or its outputs.      the action at each waypoint (ex. wait for user input, take a
+   Lifecycle Manager governs the state transitions of the        photo, pick up an object, etc) which are dynamically loaded
+nodes. It is used to orchestrate the bringup and shutdown        at run-time and fully configurable. The server also supports
+of the system safely and deterministically to guarantee all      looping a series of waypoints for repetitive actions.
+constituent components of ROS 2 are active and ready                Command and Control Panel is an Rviz user interface
+before the first command is processed. It also maintains a       for interacting with Nav2 for testing, evaluation, or getting
+connection to each server throughout execution to deactivate     started. It provides tools to command the robot with navigate
+the system should any component fail. It may also re-activate    to pose, navigate through poses, and waypoint following
+the system after an error is handled.                            tasks. It also visualizes the action feedback, can cancel
+   Collision Monitor checks for breaches in zones around         ongoing tasks, and control the system’s lifecycle states.
+the robot from sensors such as pointclouds, laser scans, or         Robot simulation eases the process of development, test-
+sonars to prevent imminent collisions, bypassing navigation’s    ing, and reproduction. Nav2 provides out-of-the-box support
+planners in case of sudden and urgent changes. These zones       for the Gazebo simulator, a sister project of ROS, for
+may ask a robot to slow to a reduced speed or immediately        testing and evaluation before deploying new capabilities onto
+stop when a sufficient number of returns are detected. These     hardware robots [63]. Gazebo has been developed and used
+zones may also be scheduled based on velocity. The monitor       for over a decade by ROS Community and contains nu-
+also has an Approach mode to project a robot’s footprint         merous features helpful for building practical robot systems,
+forward in time and reduce the speed to assure the system is     including:
+always a certain duration away from potential collisions. An
+                                                                    • Wide variety of supported sensors
+example can be seen in Fig. 19, showing the three primitive
+                                                                    • Plugin-based physics with rigid body dynamics
+types of collision monitoring supported: stop, slowdown, and
+                                                                    • A client-server architecture allowing distributed compu-
+approach polygons. Note that any convex or concave polygon
+may be specified in the primary robot body-fixed frame.                tation
+                                                                    • Fully integrated with ROS
+                                                                    • Cross-platform support with cloud integration
+                                                                    • XML described simulation environments using Simula-
+                                                                       tion Description Files (SDF)
+                                                                    Nav2 provides a set of simulations containing a robot
+                                                                 platform in various environments including a sandbox and
+                                                                 a warehouse environment for easy testing and evaluation of
+                                                                 the framework. As an alternative, additional environments
+                                                                 can be easily created for a robot platform, as depicted on
+                                                                 Fig. 20.
+                                                                    The Gazebo brand has two distinct products within it:
+                                                                 Gazebo (aka Gazebo Classic) and Ignition-Gazebo (aka
+                                                                 Ignition). Ignition-Gazebo is a re-write of the legacy software
+                                                                 to provide a modular, plugin-based simulation framework.
+        Fig. 19.   Collision Monitor zones on a sample robot.
+                                                                 Although not yet as fully featured, Nav2 will soon provide
+   Velocity Smoother smooths the output velocities from the      support for Ignition as well [65].
+navigation system by applying dynamic constraints based
+                                                                      X. T HE F UTURE OF ROS 2 M OBILE ROBOTICS
+on the current robot state. This improves smoothness of
+the commands sent to a base controller, which can increase          The previous sections discussed the algorithms, behaviors,
+the longevity of the hardware. When set to a higher rate         and features currently available in Nav2, and ROS 2 in
+than incoming velocity commands, it will also interpolate        general. These have been the product of several years of
+the commands by dynamic limits providing even smoother           dedicated collaborations between industry, academia, and in-
+output to the hardware at a regular interval.                    dividual contributors across the globe. These efforts continue
+   Simple Commander is a Python3 API to command Nav2             today to develop additional missing technologies for robotics
+at all levels from the BT Navigator down to its constituent      research and commercialization. This section highlights a
+                                                                      the state of the art in localization has improved since its
+                                                                      creation. A design has been proposed to create a localiza-
+                                                                      tion framework for building both 2D and 3D localization
+                                                                      systems atop of modular components. In the future, this
+                                                                      will allow developers to swap out individual components of
+                                                                      standard implementations to build use case-specific or novel
+                                                                      localization systems without being required to recreate all
+                                                                      other components. Its initial release will contain an analog
+                                                                      to AMCL, but also recent algorithms such as DT-NDL-MCL
+                                                                      and pose-graph based solutions [66].
+                                                                                                XI. C ONCLUSION
+                                                                         This paper surveys the state-of-the-art in ROS 2 naviga-
+                                                                      tion, as of November 2022, with key metrics and expert
+Fig. 20.   Example of TurtleBot3 Waffle robot, operating in the AWS   insights from principal ROS developers and maintainers. The
+Bookstore environment simulated by Gazebo [64].                       redesign of Nav2 has triggered a renewed interest in mobile
+                                                                      robotics technology in the ROS ecosystem. Since 2018, Nav2
+                                                                      and related projects have continued to develop modern algo-
+selection of notable ongoing and future-looking projects in           rithms to augment historically capable methods in continual
+the ROS 2 mobile robotics ecosystem being pursued.                    use since Willow Garage. New global path planning, local
+   There are many situations where it is necessary to plan            trajectory planning, cost map, and state estimation algorithms
+global paths based on a reduced representation of the en-             have been introduced to enhance navigation capabilities
+vironment, rather than in free-space where the robot may              to support a broader set of vehicles, environments, and
+travel anywhere. Large-scale warehouses may be so massive             applications. Moreover, entirely new classes of algorithms
+that it is unrealistic to replan entire routes within a reasonable    and systems have been added to hone performance: such as
+time-frame using free-space planning. They may also require           path smoothers, behavior trees, and numerous utilities. This
+the robot to travel on pre-assigned routes wherever possible.         innovation has not terminated - new developments come on
+Further, local trajectory planning in non-planar environments         a quarterly basis and continues to thrive amongst an ever
+(e.g. parking garages, outdoor unstructured environments)             increasing number of commercial, academic, and individual
+may require the use of traversibility estimation in the local         contributors.
+time-horizon. Rather than creating and storing similar height-
+maps for global planning, routing is frequently utilized. In                                       R EFERENCES
+development is a Route Server analogous to the Planner                 [1] S. Macenski, T. Foote, B. Gerkey, C. Lalancette, and W. Woodall,
+Server to enable navigation-graph global route planning to                 “Robot operating system 2: Design, architecture, and uses in the wild,”
+                                                                           Science Robotics, vol. 7, no. 66, p. eabm6074, 2022.
+handle all of these situations within the Nav2 framework.              [2] S. Macenski, F. Martı́n, R. White, and J. G. Clavero, “The marathon 2:
+It will use a pre-defined graph to plan through spaces                     A navigation system,” in 2020 IEEE/RSJ International Conference on
+with configurable constraints and directionality. The graph                Intelligent Robots and Systems (IROS). IEEE, 2020, pp. 2718–2725.
+                                                                       [3] E. Marder-Eppstein, E. Berger, T. Foote, B. Gerkey, and K. Kono-
+may represent a hand-selected set of points, automatically                 lige, “The office marathon: Robust navigation in an indoor office
+generated nodes and edges from a visibility graph, the                     environment,” in 2010 IEEE international conference on robotics and
+result of a Probabilistic Roadmap generator, and more. This                automation. IEEE, 2010, pp. 300–307.
+                                                                       [4] M. Jaimez, J.-L. Blanco, and J. Gonzalez-Jimenez, “Efficient reactive
+will unlock the ability for directional and non-directional                navigation with exact collision determination for 3d robot shapes,”
+lanes or bounded navigation regions, coarse global routing                 International Journal of Advanced Robotic Systems, vol. 12, no. 5,
+through massive spaces which may be refined within a win-                  p. 63, 2015.
+                                                                       [5] L. C. Wang, L. S. Yong, and M. Ang, “Hybrid of global path
+dow, algorithmically-defined reduced free-space planning,                  planning and local navigation implemented on a mobile robot in indoor
+and general outdoor navigation.                                            environment,” in Proceedings of the IEEE Internatinal Symposium on
+   Additionally, work is being conducted to extend Nav2’s                  Intelligent Control, 2002.
+                                                                       [6] E. Dijkstra, “A note on two problems in connexion with graphs.
+provided environment models out of two-dimensions. Ex-                     numeriske mathematik, 1, 269–271,” 1959.
+tensions are being designed to facilitate height maps with             [7] S. M. LaValle, “Rapidly-exploring random trees : a new tool for path
+traversibility estimation for outdoor, urban, and natural en-              planning,” The annual research report, 1998.
+                                                                       [8] O. Brock and O. Khatib, “High-speed navigation using the global
+vironments. This will enable new classes of robot systems                  dynamic window approach,” in Proceedings 1999 IEEE International
+to leverage Nav2 natively without coarsely approximating                   Conference on Robotics and Automation (Cat. No.99CH36288C),
+terrain information using cost or risk maps. It also improves              vol. 1, 1999.
+                                                                       [9] A. Nash, K. Daniel, S. Koenig, and A. Felner, “Theta*: Any-angle
+traditional indoor robot systems, facilitating more accurate               path planning on grids,” in AAAI, vol. 7, 2007, pp. 1177–1183.
+ground information to avoid small objects and exploit ramps.          [10] P. E. Hart, N. J. Nilsson, and B. Raphael, “A formal basis for the
+   Finally, in the future, more attention will be focused on the           heuristic determination of minimum cost paths,” IEEE transactions on
+                                                                           Systems Science and Cybernetics, vol. 4, no. 2, pp. 100–107, 1968.
+problems of two- and three-dimensional localization. AMCL,            [11] R. Philippsen, “A light formulation of the e interpolated path replan-
+used commonly in ROS, has a number of shortcomings and                     ner,” ETH Zurich, Tech. Rep., 2006.
+[12] J. E. Bresenham, “Algorithm for computer control of a digital plotter,”   [36] T. Lozano-Perez, “Spatial planning: A configuration space approach,”
+     IBM Systems journal, vol. 4, no. 1, pp. 25–30, 1965.                           Computers, IEEE Transactions on, vol. 100, no. 2, pp. 108–120, 1983.
+[13] A. Nash, S. Koenig, and C. Tovey, “Lazy theta*: Any-angle path            [37] G. K. Kraetzschmar, G. Pagès Gassull, and K. Uhl, “Probabilistic
+     planning and path length analysis in 3d,” in Proceedings of the AAAI           quadtrees for variable-resolution mapping of large environments,”
+     Conference on Artificial Intelligence, vol. 24, no. 1, 2010, pp. 147–          IFAC Proceedings Volumes, vol. 37, no. 8, pp. 675–680, 2004.
+     154.                                                                      [38] D. V. Lu, D. Hershberger, and W. D. Smart, “Layered costmaps
+[14] D. Dolgov, S. Thrun, M. Montemerlo, and J. Diebel, “Practical                  for context-sensitive navigation,” in 2014 IEEE/RSJ International
+     search techniques in path planning for autonomous driving,” Inter-             Conference on Intelligent Robots and Systems. IEEE, 2014, pp. 709–
+     national Symposium on Search Techniques in Artificial Intelligence             715.
+     and Robotics, 2008.                                                       [39] K. Museth, J. Lait, J. Johanson, J. Budsberg, R. Henderson, M. Alden,
+[15] M. Likhachev and D. Ferguson, “Planning long dynamically feasible              P. Cucka, D. Hill, and A. Pearce, “Openvdb: An open-source data
+     maneuvers for autonomous vehicles,” The International Journal of               structure and toolkit for high-resolution volumes,” in ACM SIGGRAPH
+     Robotics Research, vol. 28, no. 8, pp. 933–945, 2009.                          2013 Courses, ser. SIGGRAPH ’13.             Association for Computing
+[16] M. Pivtoraiko, R. A. Knepper, and A. Kelly, “Optimal, smooth,                  Machinery, 2013.
+     nonholonomic mobile robot motion planning in state lattices,” Robotics    [40] S. Macenski, D. Tsai, and M. Feinberg, “Spatio-temporal voxel layer:
+     Institute, Carnegie Mellon University, Pittsburgh, PA, Tech. Rep.              A view on robot perception for the dynamic world,” International
+     CMU-RI-TR-07-15, 2007.                                                         Journal of Advanced Robotic Systems, vol. 17, no. 2, 2020.
+[17] M. Pivtoraiko, T. Howard, I. Nesnas, and A. Kelly, “Field experi-         [41] G. Oriolo, G. Ulivi, and M. Vendittelli, “Fuzzy maps: a new tool for
+     ments in rover navigation via model-based trajectory generation and            mobile robot perception and planning,” Journal of Robotic Systems,
+     nonholonomic motion planning in state lattices,” in Proceedings of             vol. 14, no. 3, pp. 179–197, 1997.
+     9th International Symposium on Artificial Intelligence, Robotics, and     [42] M. Colledanchise and P. Ögren, ”Behavior trees in robotics and AI:
+     Automation in Space (iSAIRAS ’08), February 2008.                              An introduction”. CRC Press, 2018.
+[18] N. Limpert, S. Schiffer, and A. Ferrein, “A local planner for             [43] W. Meeussen. (2010) Rep-105: Coordinate frames for mobile
+     ackermann-driven vehicles in ros sbpl,” in 2015 Pattern Recognition            platforms. [Online]. Available: https://www.ros.org/reps/rep-0105.html
+     Association of South Africa and Robotics and Mechatronics Interna-        [44] T. Foote, “tf: The transform library,” in 2013 IEEE Conference on
+     tional Conference (PRASA-RobMech), 2015, pp. 172–177.                          Technologies for Practical Robot Applications (TePRA), 2013, pp. 1–
+[19] D. Fox, W. Burgard, and S. Thrun, “The dynamic window approach to              6.
+     collision avoidance,” Robotics & Automation Magazine, IEEE, vol. 4,       [45] R. E. Kalman, “A new approach to linear filtering and prediction
+     no. 1, pp. 23–33, 1997.                                                        problems,” Transactions of the ASME–Journal of Basic Engineering,
+[20] K. Konolige, M. Agrawal, R. C. Bolles, C. Cowan, M. Fischler, and              vol. 82, no. Series D, pp. 35–45, 1960.
+     B. Gerkey, Outdoor Mapping and Navigation Using Stereo Vision,            [46] E. Wan and R. Van Der Merwe, “The unscented kalman filter for non-
+     2008.                                                                          linear estimation,” in Proceedings of the IEEE 2000 Adaptive Systems
+[21] S. Quinlan and O. Khatib, “Elastic bands: connecting path planning             for Signal Processing, Communications, and Control Symposium (Cat.
+     and control,” in [1993] Proceedings IEEE International Conference              No.00EX373), 2000, pp. 153–158.
+     on Robotics and Automation, 1993, pp. 802–807 vol.2.                      [47] T. Moore and D. Stouch, “A generalized extended kalman filter imple-
+[22] C. Rösmann, F. Hoffmann, and T. Bertram, “Timed-elastic-bands for             mentation for the robot operating system,” in Intelligent Autonomous
+     time-optimal point-to-point nonlinear model predictive control,” in            Systems 13, E. Menegatti, N. Michael, K. Berns, and H. Yamaguchi,
+     2015 European Control Conference (ECC), 2015, pp. 3352–3357.                   Eds., 2016, pp. 335–348.
+                                                                               [48] S. Williams. (2021) fuse: A graph-based sensor fusion framework.
+[23] C. Rösmann, “teb local planner,” 9 2022. [Online]. Available:
+                                                                                    Vimeo. [Online]. Available: https://vimeo.com/649648867/c524ae57fd
+     https://github.com/rst-tu-dortmund/teb local planner
+                                                                               [49] ——, “fuse,” 7 2022. [Online]. Available: https://github.com/
+[24] R. Kümmerle, G. Grisetti, H. Strasdat, K. Konolige, and W. Burgard,
+                                                                                    locusrobotics/fuse
+     “G2o: A general framework for graph optimization,” in 2011 IEEE
+                                                                               [50] S. Agarwal, K. Mierle, and T. C. S. Team, “Ceres solver,” 3 2022.
+     International Conference on Robotics and Automation, 2011, pp.
+                                                                                    [Online]. Available: https://github.com/ceres-solver/ceres-solver
+     3607–3613.
+                                                                               [51] A. Merzlyakov and S. Macenski, “A comparison of modern general-
+[25] G. Williams, P. Drews, B. Goldfain, J. M. Rehg, and E. A. Theodorou,
+                                                                                    purpose visual slam approaches,” in 2021 IEEE/RSJ International
+     “Aggressive driving with model predictive path integral control,” in
+                                                                                    Conference on Intelligent Robots and Systems (IROS), 2021.
+     2016 IEEE International Conference on Robotics and Automation
+                                                                               [52] N. Gordon, D. Salmond, and A. Smith, “Novel approach to
+     (ICRA), 2016, pp. 1433–1440.
+                                                                                    nonlinear/non-gaussian bayesian state estimation,” IEE Proc. F Radar
+[26] R. C. Coulter, “Implementation of the pure pursuit path tracking               Signal Process. UK, vol. 140, no. 2, p. 107, 1993.
+     algorithm,” 1992.                                                         [53] S. Thrun, W. Burgard, and D. Fox, Probabilistic Robotics (Intelligent
+[27] L. Kong, “Adaptive pure pursuit model for autonomous vehicle path              Robotics and Autonomous Agents). The MIT Press, 2005.
+     tracking,” 2017.                                                          [54] D. Fox, W. Burgard, and S. Thrun, “Markov localization for mobile
+[28] S. Macenski, S. Singh, F. Martı́n, and J. Ginés Clavero, “Regulated           robots in dynamic environments,” Journal of Artificial Intelligence
+     pure pursuit for robot path tracking,” 2022.                                   Research, vol. 11, pp. 391–427, nov 1999.
+[29] M. Ferguson, “graceful controller,” 9 2022. [Online]. Available:          [55] S. Thrun, “A probabilistic on-line mapping algorithm for teams of
+     https://github.com/mikeferguson/graceful controller                            mobile robots,” The International Journal of Robotics Research,
+[30] J. J. Park and B. Kuipers, “A smooth control law for graceful motion of        vol. 20, no. 5, pp. 335–363, 2001.
+     differential wheeled mobile robots in 2d environment,” in 2011 IEEE       [56] G. Vasiljević, D. Miklić, I. Draganjac, Z. Kovačić, and P. Lista, “High-
+     International Conference on Robotics and Automation. IEEE, 2011,               accuracy vehicle localization for autonomous warehousing,” Robotics
+     pp. 4896–4902.                                                                 and Computer-Integrated Manufacturing, vol. 42, pp. 1–16, 2016.
+[31] J. M. Snider, “”automatic steering methods for autonomous auto-           [57] N. Imagery and M. Agency, “United states department of defense,
+     mobiles”,” Tech. Rep. CMU-RI-TR-09-08, Robotics Institute, vol. 6,             world geodetic system 1984: Its definition and relationships with local
+     no. 61, p. 2783, 2009.                                                         geodetic systems,” Tech. Rep., TR8350.2, 01 2000.
+[32] M. Vargovcik, “Ceres smoother pull request 2753,” 3 2022. [Online].       [58] M. Buchroithner and R. Pfahlbusch, “Geodetic grids in authoritative
+     Available: https://github.com/ros-planning/navigation2/pull/2753               maps – new findings about the origin of the utm grid,” Cartography
+[33] A. Savitzky and M. J. E. Golay, “Smoothing and differentiation of data         and Geographic Information Science, pp. 1–15, 01 2016.
+     by simplified least squares procedures,” Analytical Chemistry, vol. 36,   [59] A. Pırtı, N. Arslan, B. Deveci, O. Aydin, H. Erkaya, and R. Hoşbaş,
+     pp. 1627–1639, 1964.                                                           “Real-time kinematic gps for cadastral surveying,” Survey Review -
+[34] L. Matthies and A. Elfes, “Integration of sonar and stereo range               SURV REV, vol. 41, pp. 339–351, 10 2009.
+     data using a grid-based representation,” in Proceedings of the IEEE       [60] W. Hess, D. Kohler, H. Rapp, and D. Andor, “Real-time loop closure
+     International Conference on Robotics and Automation (ICRA), 1988,              in 2d lidar slam,” in 2016 IEEE International Conference on Robotics
+     pp. 727–733.                                                                   and Automation (ICRA), 2016, pp. 1271–1278.
+[35] H. P. Moravec, “Sensor fusion in certainty grids for mobile robots,”      [61] S. Macenski, “On use of the slam toolbox: A fresh (er) look at mapping
+     AI magazine, vol. 9, no. 2, pp. 61–74, 1988.                                   and localization for the dynamic world,” in ROSCon, 2019.
+[62] S. Macenski and I. Jambrecic, “Slam toolbox: Slam for the dynamic        B. Non-Circular Differential-Drive
+     world,” Journal of Open Source Software, vol. 6, no. 61, p. 2783,
+     2021.                                                                       Recommendation: Smac State Lattice + MPPI + Sim-
+[63] N. Koenig and A. Howard, “Design and use paradigms for gazebo, an        ple Smoother.
+     open-source multi-robot simulator,” in 2004 IEEE/RSJ International
+     Conference on Intelligent Robots and Systems (IROS) (IEEE Cat.
+                                                                                 Non-circular differential drive robots generally require the
+     No.04CH37566), vol. 3, 2004, pp. 2149–2154 vol.3.                        use of feasible planners to guarantee drivability in con-
+[64] AWS Bookstore Gazebo world. [Online]. Available: https://github.         fined spaces whereas they may not rotate in place without
+     com/aws-robotics/aws-robomaker-bookstore-world                           collision. The use of the Smac State Lattice planner is
+[65] Gazebo Classic vs. Ignition feature comparison, 9 2022. [Online].
+     Available: https://gazebosim.org/docs/garden/comparison                  recommended as a high performance option with adjustable
+[66] R. Valencia, J. Saarinen, H. Andreasson, J. Vallvé, J. Andrade-Cetto,   motion primitives (including rotating in place). However,
+     and A. J. Lilienthal, “Localization in highly dynamic environments       Smac Hybrid-A* could also be appropriate if a minimum
+     using dual-timescale ndt-mcl,” in 2014 IEEE International Conference
+     on Robotics and Automation (ICRA), 2014, pp. 3956–3962.                  control set is difficult to model. If non-circular robots are in
+                                                                              settings where they may generally rotate in place anywhere
+                      A PPENDIX I                                             they might travel (e.g. not confined or large), infeasible
+        A LGORITHM S ELECTION BY ROBOT M ODEL                                 planners like the NavFn global planner may be deployed
+   Sections II - IV compare global path planners, trajectory                  instead.
+planners, and smoothers between each other with brief de-                        All trajectory planners are built to work with non-circular
+scriptions of their most useful robot model types in Tables                   robots as well, using the robot’s footprint to collision check.
+Tables I - III. However, it is useful to provide an expanded                  The same advice applies as described above for circular
+discussion on these summaries and provide algorithm opti-                     robots, but with an added computational cost for these
+mal use cases, which is further summarized in the table VI.                   heavier collision checking requirements. However, from ex-
+                                                                              perience with non-circular robots, it is recommended to
+A. Circular Differential-Drive                                                leverage the Rotation Shim controller to rotate the platform
+                                                                              to the relative path heading before path tracking when using
+   Recommendation: NavFn + MPPI
+                                                                              an infeasible planner with either DWB or Graceful. While not
+   Circular differential-drive robots typically leverage in-
+                                                                              required, it is a step-up in an observer’s predictability as these
+feasible global path planners. NavFn is the recommended
+                                                                              may struggle to make massive angular changes effectively.
+algorithm for such cases, as a high performance and highly
+                                                                                 Providing large, non-circular robots with a smoother
+deployed implementation used for over a decade. If de-
+                                                                              global path can impact small oscillatory behaviors notable
+ploying a circular differential-drive robot in injunction with
+                                                                              on non-circular robot platforms due to their shape. Due to
+other non-circular platforms, the Smac 2D-A* may be a
+                                                                              this, the simple smoother is recommended as a fast and
+good option to have behavioral consistency with other robots
+                                                                              reasonably effective solution to loosen turns and straighten
+using the feasible Smac Planners - in exchange for increased
+                                                                              out oscillations. The constrained smoother may also be
+compute time. When using a robot in non-axially aligned
+                                                                              applied, but it is computationally intensive and considers
+maps, Theta* can be most useful to generate straight-line
+                                                                              more criteria than may be required for a typical differential-
+paths at arbitrary angles.
+                                                                              drive robot application.
+   All of Nav2’s trajectory planners are also built with
+optimizations for circular robots and will work well for                      C. Omni-Directional
+this class of robot, but with different behavioral attributes.
+                                                                                 Omni-directional robots may follow the same advice out-
+The use of MPPI or TEB may be beneficial if in highly
+                                                                              lined in the differential-drive discussions above following
+dynamic settings or where needing to get out of tight spots.
+                                                                              the appropriate circular vs non-circular distinction. The only
+These predictive controllers, however, come at an elevated
+                                                                              notable difference is that Reg. Pure Puruit behavior is not
+computational cost. Reg. Pure Pursuit is useful for exact-
+                                                                              possible for omnidirectional robots to fully utilize its drive-
+path tracking behavior in static scenes or where deviation
+                                                                              train’s lateral movement capabilities. While it may be em-
+from paths is not permissible while having an exceptionally
+                                                                              ployed, it will act as though it is a differential drive robot.
+small computational footprint. DWB is a middle-ground all-
+                                                                              All other trajectory planners may utilize the full capabilities
+around option when not in dynamic scenes but deviations
+                                                                              of omnidirectional platforms.
+from the path would be beneficial - for instance to optimize
+for smoothness or increased distance from static obstacles                    D. Ackermann
+than the global infeasible plan provided.
+                                                                                 Recommendations:
+   Typically, path smoothers for circular differential drive
+robots are not necessary for good performance. However,                          • Smac Hybrid-A* + MPPI,
+
+infeasible global plans may be improved with the use of the                      • Smac Hybrid-A* + RPP + Constrained Smoother
+
+Savitzky-Golay smoother to remove localized path defects                         Ackermann robots should typically use the Smac Hybrid-
+as the result of gradient descent or cell binning, but these                  A* planner, a purpose-built planner for Ackermann or car-
+changes are largely superficial and do not manifestly impact                  like robots. However, the State Lattice planner is also ap-
+system behavior when paired with a Nav2-provided trajec-                      plicable if an application demands a finite number of totally
+tory planner.                                                                 predictable maneuvers or behaviors.
+                                                                TABLE VI
+                                                    S UMMARIZED A LGORITHM C OMPARISON
+
+
+                                                                       Planners
+  NavFn                     Good general purpose and performant holonomic planner
+  Theta*                    Best at operating in environments with long, straight, and potentially non-axially aligned corridors or open spaces
+  Smac 2D-A*                Best on circular robots in a heterogeneous fleet containing other non-circular or Ackermann robots for consistent behavior
+  Smac Hybrid-A*            Best for car-like or Ackermann robots
+  Smac State Lattice        Best for for large non-circular non-Ackermann robots or when requiring a finite set of describable robot motion primitives
+                                                                     Controllers
+  DWB                       Decent reactive choice when operating in static scenes or far from obstacles, with fully replacable objective functions
+  MPPI                      Best predictive choice for dynamic scenes and confined areas for all platforms, with fully replacable objective functions
+  TEB                       Historical predictive choice for dynamic scenes and confined areas for all platforms, with moderately tunable optimization
+  RPP                       Geometric velocity-regulated controller for non-holonomic robots which must follow a path without deviation
+  Graceful                  Good spiral technique for differential-drive robots when movements must be smooth without dense paths
+  Rotation Shim             Rotation primitive before applying other algorithms to rotate toward path heading, if possible, for smooth path tracking
+                                                                      Smoothers
+  Simple Smoother           Good for smoothing holonomic paths to remove defects caused by oscillation and widing out turning maneuvers
+  Constrained Smoother      Best for feasible paths to guarantee drivability optimizing for cost, curvature, and smoothness – computationally expensive
+  Savitzky-Golay Smoother   Good for removing localized defects caused by gradient descent, cell binning, or instantaneous changes (NavFn, Theta*)
+
+
+
+
+   It is recommended to use TEB, MPPI or RPP for Acker-
+mann robots. TEB and MPPI provide predictive controllers
+while RPP provides exact path following behaviors to car-
+like robots. While DWB may be applied to Ackermann
+robots, the trajectory generator for curvature constraints has
+not yet been contributed to the project.
+   The constrained smoother is recommended to be paired
+with the global plan with Ackermann robots to improve
+drivability and proximity to obstacles. However, this comes
+at a non-trivial computational overhead and it may only be
+required for RPP, as MPPI and TEB will internally minimize
+similar constraints as part of their formulations. The selection
+of smoother should be made in conjunction with the selection
+of path tracking behavior (trajectory planner).
+                           A PPENDIX II
+                  S MAC P LANNER F RAMEWORK
+   The Smac Planner within Nav2 is a search-based planning
+framework with multiple algorithms including Hybrid-A*,
+State Lattice, and 2D-A*. It contains a shared and highly
+optimized A* algorithm for which each algorithm utilizes
+templated by Node Types. These node types contain both the
+node’s search information (e.g. visited, queued, cost) but also
+contains the planner’s search characteristics. Specifically,
+they contain the methods specific to each planner’s behaviors
+such as heuristics, expansion characteristics, and traversal
+cost functions. All of these functions are shared via static
+members to gain the performance equivalent of a standalone
+application. This framework minimizes boilerplate such that
+new planners may be added in as few as 50 lines of code
+(with an average of approximately 200).
+

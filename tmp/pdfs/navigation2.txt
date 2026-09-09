@@ -1,0 +1,516 @@
+                                                                                          The Marathon 2:
+                                                                                        A Navigation System
+                                                  Steve Macenski                       Francisco Martı́n             Ruffin White                Jonatan Gins Clavero
+                                                R&D Innovations                   Intelligent Robotics Lab    Contextual Robotics Institute     Intelligent Robotics Lab
+                                               Samsung Research                  Rey Juan Carlos University          UC San Diego              Rey Juan Carlos University
+                                            s.macenski@samsung.com                  francisco.rico@urjc.es      rwhitema@eng.ucsd.edu             jonatan.gines@urjc.es
+arXiv:2003.00368v2 [cs.RO] 14 Jul 2020
+
+
+
+
+                                            Abstract—Developments in mobile robot navigation have en-
+                                         abled robots to operate in warehouses, retail stores, and on
+                                         sidewalks around pedestrians. Various navigation solutions have
+                                         been proposed, though few as widely adopted as ROS (Robot
+                                         Operating System) Navigation. 10 years on, it is still one of
+                                         the most popular navigation solutions1 . Yet, ROS Navigation
+                                         has failed to keep up with modern trends. We propose the new
+                                         navigation solution, Navigation2, which builds on the successful
+                                         legacy of ROS Navigation. Navigation2 uses a behavior tree for
+                                         navigator task orchestration and employs new methods designed
+                                         for dynamic environments applicable to a wider variety of
+                                         modern sensors. It is built on top of ROS2, a secure message
+                                         passing framework suitable for safety critical applications and
+                                         program lifecycle management. We present experiments in a
+                                         campus setting utilizing Navigation2 to operate safely alongside
+                                         students over a marathon as an extension of the experiment
+                                         proposed in Eppstein et al. [1]. The Navigation2 system is freely
+                                         available at https://github.com/ros-planning/navigation2 with a
+                                         rich community and instructions.
+                                            Index Terms—Service Robots; Software, Middleware and Pro-
+                                         gramming Environments; Behaviour-Based Systems
+                                                                                                                             (a) Tiago [12]            (b) RB-1 [13]
+                                                               I. I NTRODUCTION                                      Fig. 1: Robots used for the marathon experiments.
+                                            Many mobile robot navigation frameworks and systems
+                                         have been proposed since the first service robots were created
+                                         [2] [3]. These frameworks laid the groundwork for the service            In this work, we studied current trends and robotics systems
+                                         robots that are being rolled out in factories, retail stores, and     to create a new navigation system leveraging our collective
+                                         on sidewalks today. While many have been proposed, very few           experiences working with popular robotics frameworks. This
+                                         have rivaled the impact of the ROS Navigation Stack on the            work looks to build off of the success of Navigation while
+                                         growing mobile robotics industry.                                     supporting a wider variety of robot shapes and locomotion
+                                            Indeed, this open-source project has fueled companies, gov-        types in more complex environments.
+                                         ernments, and researchers alike. It has gathered more than 400           In this paper, we propose a new, fully open-source, nav-
+                                         citations, over 1,000 papers indexed by Google Scholar men-           igation system with substantial structural and algorithmic
+                                         tion it, and 1,200 forks on GitHub, as of February 2020. Pro-         refreshes, Navigation2. Navigation2 uses a configurable be-
+                                         posed in 2010, it provided a rich and configurable navigation         havior tree to orchestrate the planning, control, and recovery
+                                         system that has been reconfigured for use on a variety of robot       tasks [6]. Its federated model is structured such that each
+                                         platforms [1]. It provided a reference framework and a set of         behavior tree node invokes a remote server to compute one
+                                         foundational implementations of algorithms including A* [4]           of the above tasks with one of a growing number of algorithm
+                                         and Dynamic Window Approach (DWA) [5] for planning and                implementations. Each server implements a standard plugin
+                                         control. Navigation, however, suffered from perception and            interface to allow for new algorithms or techniques to be easily
+                                         controller issues in highly dynamic environments and lacked           created and selected at run-time.
+                                         a general state estimator. Further, ROS1 lacks in security and
+                                                                                                                  This architecture makes use of multi-core processors and
+                                         performance aspects, rendering it unsuitable for safety critical
+                                                                                                               leverages the real-time, low-latency capabilities of ROS2 [7].
+                                         applications.
+                                                                                                               ROS2 was redesigned from the ground up to be industrial-
+                                           1 By GitHub stars, forks, citations, and industry use               grade providing security, reliability, and real-time capabilities
+for the next generation of robots. ROS2 also introduces the        with an use-case specific detector enabled. We implemented an
+concept of Managed Nodes, servers whose life-cycle state           optimal local trajectory planner and 3D environmental mod-
+can be controlled, which we exploit to create deterministic        elling technique that is functionally efficient in the presence
+behavior for each server in the system.                            of dynamic obstacles without explicit detection, but can be
+   Our proposed algorithmic refreshes are focused on modu-         augmented with such information if available.
+larity and operating smoothly in dynamic environments. This
+includes: Spatio-Temporal Voxel Layer (STVL) [8], layered          B. Models
+costmaps [9], Timed Elastic Band (TEB) controller [10],               Behavior trees (BT) have been shown to be successful for
+and a multi-sensor fusion framework for state estimation,          task planning in robotics, as a replacement for finite state
+Robot Localization [11]. Each supports holonomic and non-          machines (FSM) [20]. With growing numbers of states and
+holonomic robot types. However, Navigation2 is specifically        transitions, modeling complex behaviors and multi-step tasks
+designed such that all components are run-time configurable        as FSMs can become intractably complex for real-world tasks.
+and in many cases, multiple alternative algorithms are already     [20] successfully demonstrates the use of behavior trees to
+available for use. Our navigation system, the first of its kind    model motion and shooting tactics for soccer game play that
+built using ROS2, is shown to safely operate in a highly-          would otherwise be intractable with a FSM.
+dynamic campus setting. Through long-duration experiments,            BTs have also been applied heavily to the domain of robot
+we show that it can robustly navigate a distance in excess of      mission execution, robot manipulation, and complex mobile-
+a marathon (37.4 miles total) with the Tiago & RB-1 base,          manipulator tasks [6]. Further, behavior trees can be easily
+shown in Figure 1, through high-trafficked areas.                  modified with widely reusable primitives and loaded at run-
+                                                                   time, requiring no programmed logic. For this reason, behavior
+                     II. R ELATED W ORK
+                                                                   trees are used in our approach as the primary structure of the
+A. Navigation Systems                                              navigation framework.
+    Dervish was one of the first robots that implemented an
+effective navigation system in an office environment [14]. It                       III. NAVIGATION 2 D ESIGN
+used a coarse probabilistic representation of the environment         The Navigation2 system was designed for a high-degree
+using a sonar ring to navigate through a hallway scene for the     of configurability and future expansion. While the marathon
+Office Delivery Robot Competition. Soon after, [2] and [15]        experiments display one such configuration of Navigation2,
+introduced the museum robots, RHINO and MINERVA. These             the intent of our work is to support a large variety of
+robots primarily used probabilistic occupancy grids to localize    robot types (differential, holonomic, ackermann, legged) for
+in their environments with varying planning approaches. To         a large variety of environments and applications. Further, this
+avoid obstacles, DWA was used [5]. These robots relied on 2D       support is not only targeted for research and education, but
+environmental representations for positioning and navigation,      for production robots as well. The design took into account
+which could lead to collisions with out of plane obstacles.        the requirements for robotics products needs including safety,
+     [1] presented a navigation system and environmental repre-    security, and determinism without loss of the above generality.
+sentation utilizing 3D information from tilting 2D laser scan-
+ners to navigate an environment. Many of the early techniques,     A. Reliable
+such as A* and DWA, were used for planning and obstacle               For professional mobile robots moving in excess of 2 m/s
+avoidance. Over time, tilting 2D laser scanners have given         near humans, there are many safety and reliability concerns
+way to ubiquitous inexpensive 3D depth cameras and laser           that must be addressed. Navigation2 is designed on top of
+scanners. Some of the approach’s formulation is specialized        a real-time capable meta-operating system, ROS2, to address
+for the geometry, low accuracy, and effects displayed by a 2D      functional safety standards and determinism. ROS2 is the
+tilting laser configuration. Additionally, with the introduction   second generation of ROS, the popular robot middleware,
+of sparse multi-beam laser scanners, pure raycasting methods       built on Data Distribution Service (DDS) communication
+can no longer effectively clear out free space, especially in a    standard [7]. DDS is used in critical infrastructure including
+dynamic scene. STVL created a more scalable alternative for        aircraft, missile systems, and financial systems. It exposes the
+many, sparse, and long-range sensors that is utilized in place     same strict messaging guarantees from the DDS standard to
+of such techniques [8].                                            enable applications to select a policy for messaging. ROS2
+    An outdoor robot navigation experiment was presented in        leverages DDS security features to allow a user to securely
+2013 [19]. That work focused on the mapping, localization,         transmit information inside the robot and to cloud servers
+and simple dynamic obstacle detection method used to navi-         without a dedicated network. These features create a viable
+gate the streets of Germany over 7 km. Our work focuses on         communication framework for industrial-grade mobile robots.
+a modular navigation framework to build many types of ap-             Further, ROS2 introduces the concept of Managed Nodes
+plications using behavior trees and extended experimentation       (also known as Lifecycle Nodes). A managed node implements
+to showcase its maturity. While we do not directly consider        a server structure with clear state transitions from instantiation
+the detection of dynamic obstacles in our experiments, all         through destruction [21]. This server is created when the pro-
+the necessary interfaces exist to do this through Navigation2      gram is launched, but waits for external stimulus to transition
+through a deterministic bringup process. At shutdown or error,      to the navigator itself. More than simply utilizing multiple
+the server is stepped through its state machine from an active      processor cores, these nodes can call remote servers on other
+to finalized state. Each state transition has clear responsibili-   CPUs in any language with ROS2 client library support.
+ties including management of memory allocation, networking             The task-specific servers are designed to each host a ROS2
+interfaces, and beginning to process its task. All servers in       server, environmental model, and run-time selected algorithm
+Navigation2 make use of managed nodes for deterministic             plugin. They are modular such that none or many of them
+program lifecycle management and memory allocations.                can run at the same time to compute actions. The ROS2
+                                                                    server is the entry-point for BT navigator nodes. This server
+B. Modular and Reconfigurable                                       also processes cancellation, preemption, or new information
+   To create a navigation system that can work with a large         requests. The requests are forwarded to the algorithm plugin
+variety of robots in many environments, Navigation2 must            to complete their task with access to the environmental model.
+be highly modular. Similarly, our design approach favored              In summary, we can create configurable behavior trees
+solutions that were not simply modular, but also easy to            whose structure and nodes can be loaded at run-time. Each
+reconfigure and select at run-time. Navigation2 created two         BT node manages the communications with a remote server,
+design patterns to accomplish this: a behavior tree navigator       that hosts an algorithm written in an array of languages, loaded
+and task-specific asynchronous servers, shown in Figure 2.          at run-time through plugin interfaces.
+Each task-specific server is a ROS2 node hosting algorithm
+                                                                    C. Support Feature Extensions
+plugins, which are libraries dynamically loaded at run-time.
+                                                                       Using the modularity and configurability of Navigation2,
+                                                                    several commercial feature extensions were proposed in the
+                                                                    design phase. This subsection will highlight key examples and
+                                                                    the design considerations to enable them. Behavior trees are
+                                                                    most frequently used to model complex or multi-step tasks,
+                                                                    where navigating to a position is a node of that larger task. The
+                                                                    BT library BehaviorTree.CPP2 was selected for its popularity
+                                                                    and support for subtrees to allow Navigation2 to be used
+                                                                    in larger BT tasks. Users with complex missions may use a
+                                                                    provided ’Navigation2 BT node’ wrapper to use Navigation2
+                                                                    as a subtree of their mission.
+                                                                       Many service robots will autonomously dock to recharge
+                                                                    or operate elevators without requiring human assistance [22].
+                                                                    Traditional navigation frameworks have not addressed this
+                                                                    class of task in their formulation. While these extensions are
+           Fig. 2: Overview of Navigation2 design.                  not implemented due to lack of vendor standardization, we
+                                                                    provide instruction to easily enable them. Each server supports
+   The Behavior Tree Navigator uses a behavior tree to orches-      multiple algorithm plugins; a docking controller algorithm can
+trate the navigation tasks; it activates and tracks progress of     be loaded into the controller server and called from the BT to
+planner, controller, and recovery servers to navigate. The be-      dock a robot. A BT action node can be trivially added to call
+havior tree plugins call to the planner, controller and recovery    an elevator using other IoT APIs provided by vendors [23].
+servers using the ROS2 action interface. Unique navigation                       IV. NAVIGATION 2 I MPLEMENTATION
+behaviors can be created by modifying a behavior tree, stored
+                                                                       In this section, each of the recovery, planner, and controller
+as an XML. BTs are trivial to reconfigure with different control
+                                                                    servers provided in Navigation2 are examined. Each may
+flow and condition node types, requiring no programming.
+                                                                    be customized or replaced by the user, but we will address
+Changing navigation logic is as simple as creating a new
+                                                                    the specific algorithm plugins and servers provided, recom-
+behavior tree markup file that is loaded at run-time. We exploit
+                                                                    mended, and used in our experiment. Each server contains an
+BT action node statuses and control flow nodes to create a
+                                                                    environmental model relevant for their operation, a network
+contextual recovery system where the failure of a specific
+                                                                    interface to ROS2, and a set of algorithm plugins to be defined
+server will trigger a unique response.
+                                                                    at run-time. Provided plugins can be seen in Table I.
+   Using ROS2, the behavior tree nodes in the navigator can
+call long running asynchronous servers in other processor           A. Behavior Tree Navigator
+cores. Making use of multi-core processors substantially in-           The behavior tree navigator is the highest level component
+creases the amount of compute resources a navigation system         of Navigation2, hosting the tree used to implement navigation
+can effectively utilize. The Navigation2 BT navigator makes         behaviors. Navigation2 builds upon BehaviorTree.CPP, an
+use of dynamic libraries to load plugins of BT nodes. This          open source C++ library supporting type-safe asynchronous
+pattern allows for reusable primitive nodes to be created and
+loaded with a behavior tree XML at run-time without linking           2 https://github.com/BehaviorTree/BehaviorTree.CPP
+              TABLE I: Navigation2 provided plugins.                         Note, however, that recovery behaviors can either be specific
+    Type          Plugin                 Description                      to its subtree (e.g. the global planner or controller) or system
+                  DWB Controller         Configurable DWA controller      level in the subtree containing only recoveries in case of
+    Control
+                  TEB Controller         Timed-Elastic-Bands controller
+                  Inflation Layer        Inflate obstacles in costmap
+                                                                          system failures. Those used for experiments are as follows:
+                  Non-Persist. Voxel Maintain only recent voxels             Clear Costmap: A recovery to clear costmap layers in case
+                  Obstacle Layer         Raycast 2D obstacles             of perception system failure. Spin: A recovery to clear out free
+    Costmap
+                  STVL                   Temporal 3D sparse voxel grid
+                  Static Layer           Loads static map into costmap
+                                                                          space and nudge robot out of potential local failures, e.g. the
+                  Voxel Layer            Raycast 3D obstacles             robot perceives itself to be too entrapped to back out. Wait:
+    Planner       NavFn Planner          Holonomic A* expansion           A recovery to wait in case of time-based obstacle like human
+                  Back Up                Back out of sticky situations    traffic or collecting more sensor data.
+                  Clear Costmap          Clear erroneous measurements
+    Recovery
+                  Spin                   Rotate to clear free space
+                  Wait                   Waitout time based obstacles     C. Perception
+                      Bold entries used in experiments.                      As range and resolution of depth sensing technologies have
+                                                                          improved, so too have world representations for modeling
+actions, composable trees, and logging/profiling infrastructures          a robot’s environment. To leverage these improvements, a
+for development. The top level node, BT navigator server, seen            layered costmap approach is used, allowing the user to cus-
+in Figure 2, is where user defined BT are loaded and run. Each            tomize the hierarchy of layers from various sensor modalities,
+node calls a server, below, to complete a task.                           resolutions, and rate limits. A layered costmap allows for
+                                                                          a single costmap to be coherently updated by a number of
+                                                                          data sources and algorithms. Each layer can extend or modify
+                                                                          the costmap it inherits, then forward the new information to
+                                                                          planners and controllers.
+                                                                             While the costmap is two dimensional, STVL maintains
+                                                                          a 3D representation of the environment to project obstacles
+                                                                          into the planning space. This layer uses temporal-based mea-
+                                                                          surement persistence to maintain an accurate view of the
+                                                                          world in the presence of dynamic obstacles. It scales better
+                                                                          than raycasting approaches with many, high-resolution, and
+                                                                          long-range sensors such as 2D and 3D laser scanners, depth
+                                                                          cameras, and Radars [8]. Figure 4 shows the robot planning
+                                                                          a route in a central stairwell and its view of the environment
+                                                                          using STVL to represent a voxel grid. The map (shown in
+Fig. 3: Behavior tree used in the marathon. ’?’ represent a               black) and inflation of the static map (colored gradient) are
+fallback node, and ”→” represents a sequence node.                        also displayed in the local and global costmaps.
+                                                                             Those used for experiments are as follows:
+   Figure 3 depicts a conventional Navigation2 BT, also used                 Static Layer: Uses the static map, provided by a SLAM
+in our experiments. Following the logical flow from left to               pipeline or loaded from disk, and initializes occupancy infor-
+right, a policy ticks the global planner action at a rate of 1            mation. Inflation Layer: Inflates lethal obstacles in costmap
+Hz. If the global planner fails to find a path, the fallback              with exponential decay by convolving the collision footprint of
+node advances to the next child action to clear the global                the robot. Spatio-Temporal Voxel Layer: Maintains temporal
+environment of prior obstacles. Clearing of the environmental             3D sparse volumetric voxel grid that decays over time via
+model may help resolve potential failures in the perception               sensor models from the laser and RGBD cameras.
+system. The parent sequence node then ticks the controller or
+similar clear fallback behavior. Should local fallback actions            D. Global Planner and Controller
+and subsequent sequence node return failure, the root fallback               The task of the global planner is to compute the shortest
+node then ticks the final child, attempting evermore aggressive           route to a goal and the controller uses local information to
+recovery behaviors. First by cleaning all environments, then              compute the best local path and control signals. The global
+spinning the robot in place to reorient local obstacles, and              planner and controller are plugins delegated to task-specific
+finally waiting for any dynamic obstacles to give way.                    asynchronous servers. For performance, relevant global and
+                                                                          local costmaps are co-located in their respective server.
+B. Recovery                                                                  New algorithms are employed for smoothly navigating in
+   Recovery behaviors are used to mitigate complete naviga-               highly dynamic environments by combining the TEB Local
+tion failures. They are called from the leaves in the behavior            Planners with the STVL for dynamic 3D perception. The TEB
+tree and carried out by the recovery server. By convention,               controller is capable of taking in object detections and tracks to
+these behaviors are ordered from conservative to aggressive               inform the controller of additional constraints on the environ-
+actions.                                                                  ment. It is also suitable for use on differential, omnidirectional,
+                                                                     F. Utilities
+                                                                        Navigation2 also includes tools to aid in testing and op-
+                                                                     erations. It includes the Lifecycle Manager to coordinate the
+                                                                     program lifecycle of the navigator and various servers. This
+                                                                     manager will step each server through the managed node
+                                                                     lifecycle: inactive, active, and finalized.
+                                                                        The lifecycle manager can be set to transition all provided
+                                                                     servers to the active state on system bringup. Alternatively,
+                                                                     it may wait for a signal to activate the system. Navigation2
+                                                                     enables users to activate, manage, and command their system
+                                                                     through a GUI. This GUI includes controlling the lifecycle
+                                                                     manager, issuing navigation commands, selecting waypoints to
+                                                                     navigate through, and canceling current tasks in real-time. For
+                                                                     autonomous applications, all of these commands are available
+                                                                     through ROS2 server interfaces with examples.
+                                                                     G. Quality Assurance
+                                                                        System wide integration tests are employed for quality
+                                                                     assurance purposes; helping to avoid regressions over time. In
+                                                                     addition to basic unit testing, code style linters, and memory
+                                                                     static analysis - simulation tests are used by a continuous
+                                                                     integration pipeline to emulate an entire robot software stack.
+Fig. 4: Visualization of robot with depth, and map information.      As shown in Figure 5, a 3D robotic simulator, Gazebo [25],
+                                                                     is used to test community contributions over an assortment of
+                                                                     virtual scenarios including static and dynamic environments.
+and ackermann style robots. DWB, a DWA implementation
+(DW ”B” being incrementally named), is also implemented
+as a highly-configurable scoring-based controller. However it
+is not used in these experiments due to its performance in
+dynamic scenes. Those used for experiments are as follows:
+   A* Planner: Navigation function planner using A* expan-
+sion and assumes a 2D holonomic particle. TEB Controller:
+Uses Timed-elastic-bands for time-optimal point-to-point non-
+linear model predictive control.
+E. State Estimation
+   For state estimation, Navigation2 follows ROS transforma-         Fig. 5: Sample simulation from Continuous Integration tests.
+tion tree standards to make use of many modern tools available
+from the community. This includes Robot Localization, a                Such system tests allow maintainers to monitor not only
+general sensor fusion solution using Extended or Unscented           navigation failures over tested trajectories, but also perfor-
+Kalman Filters [11]. It is used to provide smoothed base odom-       mance analytics for various algorithms over an assortment of
+etry from N arbitrary sources, which often includes wheel            robot platforms with unique locomotion kinematics.
+odometry, multiple IMUs, and visual odometry algorithms.
+                                                                                   V. E XPERIMENT AND A NALYSIS
+   However, locally filtered poses are insufficient to account for
+integrated odometric drift, thus a global localization solution      A. Experiment Overview
+remains necessary for navigation. The global localization               To show the robustness of Navigation2, we conducted a
+solutions used for experiments are as follows:                       more extensive experiment than proposed in [1], an ”ultra-
+   SLAM Toolbox: A configurable graph-based SLAM system              marathon” (a distance greater than a standard marathon). This
+using 2D pose graphs and canonical scan matching to generate         test demonstrated the robustness and reliability of our system
+a map and serialized files for multi-session mapping [24]. This      in long-term operations without human assistance using two
+was used to create the static map in preparation for the ex-         professional robots: the Tiago and RB-1 base, shown in Figure
+periment. AMCL: An implementation of an Adaptive Monte-              1. These robots operated in a human-filled environment in a
+Carlo Localization, which uses a particle filter to localize a       University setting running at near-industrial speeds.
+robot in a given occupancy grid using omni-directional or               The experiment took place in the Technical School of
+differential motion models [18]. This was used as the primary        Telecommunications Engineers at the Rey Juan Carlos Uni-
+localization tool for the duration of the experiments.               versity. Figure 7 shows the map of this environment with
+                                                                     •  distance: Odometric distance travelled.
+                                                                     •  recovery_executed: Logged executed recoveries.
+                                                                      • vel_x: Instantaneous linear velocity.
+                                                                      • vel_theta: Instantaneous angular velocity.
+
+                                                                      All of the software, configurations, and data used in this
+                                                                   experiment is available in the marathon3 repository. This
+                                                                   repository contains instructions to reproduce the experiment as
+                                                                   well as the data described above collected in the experiment.
+                                                                   We collected the following information for the experiment
+                                                                   dataset: localized pose with covariance, instantaneous speed
+                                                                   commanded, whether a recovery behavior was triggered, time
+                                                                   and distance navigated, laser scan readings, geometric trans-
+                                                                   formations, inertial sensor data, and map. This data is publicly
+                                                                   available in the repository for experimental verification.
+                                                                   B. Analysis
+            Fig. 6: Robots during the experiment.                          TABLE III: Experiment results for both robots.
+                                                                                                            RB1     TIAGo         Total
+the track used in the experiment. The robot was made to                            Time (hrs)               9.4      13.4         22.8
+                                                                                Distance (miles)            15.6     21.8         37.4
+navigate this track around a central stairwell (surrounding                        Recoveries                52      116           168
+waypoints 3, 11, 13, 14), a high-traffic bridge and hallway                    Recoveries per mile          3.3       5.3          4.3
+(waypoints 4-10), and back into a lab (waypoint 1) through                      Avg. speed (m/s)            0.39     0.35         0.37
+                                                                                Max speed (m/s)             0.45     0.45         0.45
+a narrow doorway without intervention. The robot shared the
+                                                                               Num. of Collisions            0         0            0
+environment alongside students, Figure 6, whom sometimes                     Num. of Emergency stops         0         0            0
+spontaneously block the path of the robot. We define a 300
+meters route for the experiment through this set of waypoints.        Table III shows the results of the experiment. The robots
+                                                                   successfully navigated over 37 miles in under 23 hours in
+               TABLE II: Robot specifications.
+                                                                   a dynamic campus environment. During the experiment the
+                            Tiago                  RB-1            average linear speed was 0.37 m/s. Neither robot suffered a
+   Robot Type           Base + Torso                Base
+                                                                   collision or a dangerous situation requiring an emergency stop
+   Dimensions         0.54 m x 1.45 m       0.50 m x 0.251 m
+   Max. Speed              1.0 m/s                1.5 m/s          during the test. The robots operated without direct assistance
+     Battery           2 x 36V 20Ah             24V 30Ah           throughout the experiment and never failed to complete a
+    Compute             Intel i7-7700         Intel i7-7567U       navigation task.
+     Memory         8GB Ram/250GB SSD     8GB Ram/120GB SSD
+ Operating System       Ubuntu 16.04           Ubuntu 18.04
+                                                                      Figure 8 shows a time-lapse panel of a situation that the
+  Depth Camera         Orbbec Astra S          Orbbec Astra        robot faced in a crowded hallway during the moments of the
+  Laser Sensor          Sick TIM561            Sick Tim571         start of classes. In this period, many students are walking
+   Navigation2            External               Onboard           quickly to their destinations, frequently using phones. This
+                                                                   sequence shows how the robot interacts with several groups
+   The characteristics of both robots are similar, described in
+                                                                   of students. On approach, the robot first slows and navigates
+Table II. Both use differential steering, with similar diameters
+                                                                   around first two people in the group in the first panel. The third
+but varying heights. They each use RGBD cameras and safety
+                                                                   person pauses, giving the robot the right of way to continue
+laser scanners with different ranges and resolutions for percep-
+                                                                   – in panel 2. Then, after navigating around the first group in
+tion and obstacle avoidance. Both robots were set to have a
+                                                                   panels 1-3, a new person from panel 3 to 4 walks through the
+maximum speed of 0.45 m/s for functional safety, below their
+                                                                   scene and the robot corrects its trajectory to navigate away
+maximum allowable speed. Two different robots were used to
+                                                                   from their path. Panel 5 shows the robot exiting the complex
+show the portability of our system across multiple hardware
+                                                                   scenario without collision or stoppage.
+vendors with trivial reconfiguration. The Tiago utilized an
+                                                                      Passive assistance was rendered to the robot on rare in-
+external computer because its internal operating system is not
+                                                                   stances when students occupied the exact pose of a waypoint
+supported by ROS2. Both robot vendors provide supported
+                                                                   the robot was navigating towards. At that time, students were
+drivers and interfaces for users. We created a custom bridge
+                                                                   asked to move to allow the robot to continue. The time impact
+between it and ROS2 which supports continuous flow of data.
+                                                                   of this passive assistance was under 1 minute over the 22.8
+This was required to support high-frequency data requirements
+                                                                   hour experiment. This was a fault in the application built
+on transformations and odometry.
+                                                                   for the marathon experiment, which utilizes Navigation2. The
+   The robot saves the following information once a second:
+   • timestamp: Current time.                                        3 https://github.com/IntelligentRoboticsLabs/marathon ros2
+                12
+
+
+
+
+          13          11
+
+                                                         9                                     8
+                           10                                                                                                7
+                            4                            5                                     6
+
+
+          14          3
+
+
+
+
+                                                                                                   50 meters
+               15 2
+
+  1
+
+
+
+                                  Fig. 7: Map of hallway, stairwell, and lab used in experiments.
+
+
+
+
+                                          Fig. 8: An example robot-pedestrian interaction.
+
+
+application did not account for occupation of the goal pose,                              VI. L IMITATIONS
+however, this does not represent an issue or failure mode of           While shown in experiments to effectively navigate in
+Navigation2 itself.                                                 narrow spaces around people for many miles without human
+   While the total number of recoveries seems high, trigger-        intervention, there are some limitations to the Navigation2
+ing recovery behaviors is not generally a poor-performance          system which will be addressed in future work. Currently,
+indicator since it is part of a fault-tolerant system. Recoveries   the A* planner used does not create feasible paths for non-
+indicated that the robot had some difficulty due to a potentially   circular non-holonomic robots. This does not generally cause
+blocked path or erroneous sensor measurement. The system            an issue for differential drive robots used in this experiment
+automatically performs the recovery required to overcome a          as they can rotate to a new heading in-place. However, this
+given challenge resulting in the robust system presented.           creates an issue for complex geometry robots or car-like robots
+   The majority of recovery behaviors executed were due to          resulting in an inability to move because of an infeasible
+two cases. The first happened in crowded spaces where the           path to follow. Extensions are in development to support non-
+robot was unable to compute a route to its goal. In this case,      holonomic robots of arbitrary shape.
+the robot cleared its environmental representation, usually the        Further, the TEB controller can account for dynamic ob-
+local costmap, of obstacles. If this was insufficient, typically,   stacles in computing velocity commands, however, no explicit
+the path was blocked by students and the wait recovery paused       obstacle detection was utilized in these experiments. Without
+navigation until the path was clear. The second case was when       these explicit detections, our system was able to successfully
+the localization confidence was low. Long corridor areas with       navigate in the presence of many dynamic obstacles. However,
+repetitive features in the presence of many people around           detections and predictive models will further enable robots to
+caused occasional issues. AMCL works well in dynamic                operate safely around humans and other agents.
+environments when enough rays can reach the static map,                                  VII. C ONCLUSION
+however, many changes over a long duration can degrade
+positioning quality. In this situation, the robot’s spin recovery      It has been shown that the Navigation2 navigation system
+helped regain localization confidence to continue on its path.      can reliably navigate a campus environment in the presence of
+                                                                    students during long-duration testing. Our demonstration had
+   A video highlight reel of this experiment can be found in
+                                                                    2 different industrial-grade robots, using our system, navigate
+the footnote 4 .
+                                                                    in excess of a marathon without any human intervention or
+                                                                    collision. The system made use of behavior trees to orchestrate
+  4 https://www.youtube.com/watch?v=tXp8wFZr68M                     navigation algorithms to be highly configurable and leverage
+multi-core processors – enabled by ROS2’s industrial-grade                      [18] D. Fox, ”KLD-Sampling: Adaptive Particle Filters”, Advances in Neural
+reliable communications. We used modern algorithms such                              Information Processing Systems, 14, pp. 713-720. 2002.
+                                                                                [19] R. Kuemmerle, M. Ruhnke, B. Steder, C. Stachniss, and W. Burgard,
+as STVL and TEB for perception and control in large and                              A Navigation System for Robots Operating in Crowded Urban Environ-
+dynamic environments while continuing to build on the legacy                         ments, in ICRA, 2013.
+of the popular work of the ROS Navigation Stack.                                [20] Rahib H. Abiyev, Irfan Gnsel, Nurullah Akkaya, Ersin Aytac, Ahmet
+                                                                                     aman, Sanan Abizada, ”Robot Soccer Control Using Behaviour Trees
+   There are gaps in dynamic obstacle tracking and planning                          and Fuzzy Logic”, 12th International Conference on Application of
+which are being developed and will be addressed in future                            Fuzzy Systems and Soft Computing ICAFS 2016 Book Series: Procedia
+work. This work is open-source under permissive licensing                            Computer Science, vol. 102, pp. 477-484, 2016.
+                                                                                [21] G. Biggs, T. Foote, ”Managed Nodes”, https://design.ros2.org/articles/
+and we anticipate many more extensions and algorithms to be                          node lifecycle.html. Accessed On: February 12, 2020.
+created using our framework, further improving over time.                       [22] J.Huang and T. Lau, ”Design and Evaluation of a Rapid Programming
+                                                                                     System for Service Robots. Proceedings of the 11th ACM/IEEE Inter-
+                       ACKNOWLEDGEMENTS                                              national Conference on Human Robot Interaction. (2016), 295302.
+                                                                                [23] Kone, Service Robot API, https://developer.kone.com/s/news/
+   Other contributors on Navigation2 include: Matt Hansen,                           service-robot-api-20Y2p000000CljREAS. Accessed on February
+Carl Delsey, Brian Wilcox, Mohammad Haghighipanah, Mike                              11, 2020.
+                                                                                [24] GitHub, ”SLAM Toolbox”, https://github.com/SteveMacenski/slam
+Jeronimo, and Carlos Orduno. Authors also thanks Lorena                              toolbox. Accessed on February 27, 2020.
+Bajo for her work during experiments.                                           [25] N. Koenig and A. Howard, ”Design and use paradigms for Gazebo,
+                                                                                     an open-source multi-robot simulator,” 2004 IEEE/RSJ International
+                             R EFERENCES                                             Conference on Intelligent Robots and Systems (IROS) (IEEE Cat.
+                                                                                     No.04CH37566), Sendai, 2004, pp. 2149-2154 vol.3.
+ [1] Marder-Eppstein, E. Berger, T. Foote, B. Gerkey, and K. Konolige, ”The
+     Office Marathon: Robust navigation in an indoor office environment,” in
+     Proc. IEEE Int. Conf. Robot. Autom. (ICRA), May 2010, pp. 300307.
+ [2] W. Burgard, A. Cremers, D. Fox, D. Hahnel, G. Lakemeyer, D. Schulz,
+     W. Steiner, and S. Thrun, ”The interactive museum tour-guide robot,”
+     in Proc. of the National Conference on Artificial Intelligence, 1998.
+ [3] S.F. Chik, Y. Fai, E. Su, T.Y Lim, Y. Subramaniam, P.J.H. Chin, ”A
+     review of social-aware navigation frameworks for service robot in dy-
+     namic human environments”, Journal of Telecommunication, Electronic
+     and Computer Engineering, 8. 41-50, 2016.
+ [4] K. Konolige, ”A gradient method for realtime robot control,” in Pro-
+     ceedings of IEEE/RSJ International Conference on Intelligent Robots
+     and Systems (IROS 2000), Kagawa University, Takamatsu, Japan, 2000.
+ [5] D. Fox, W. Burgard and S. Thrun, ”The dynamic window approach to
+     collision avoidance,” in IEEE Robotics and Automation Magazine, vol.
+     4, no. 1, pp. 23-33, March 1997.
+ [6] M. Colledanchise, P. Ogren, Use of BTs in Robotics and AI, in Behavior
+     Trees in Robotics and AI: An Introduction, 1st Ed., CRC Press, 2018,
+     pp. 15-22.
+ [7] Y. Maruyama, S. Kato, T. Azumi, ”Exploring the Performance of ROS2”,
+     Proc. of ACM EMSOFT, pp. 5:1-5:10, 2016.
+ [8] S. Macenski, D. Tsao, M. Feinberg, ”Spatio-Temporal Voxel Layer: A
+     View on Robot Perception for the Dynamic World,” International Journal
+     of Advanced Robotic Systems, 2020, to appear.
+ [9] D. V. Lu, D. Hershberger, W. D. Smart, ”Layered costmaps for context-
+     sensitive navigation”, 2014 IEEE/RSJ International Conference on In-
+     telligent Robots and Systems (IROS 2014), pp. 709-715.
+[10] C. Rsmann, F. Hoffmann, T. Bertram, ”Timed-elastic-bands for time-
+     optimal point-to-point nonlinear model predictive control”, European
+     Control Conference (ECC), 2015.
+[11] T. Moore and D. Stouch. A generalized extended kalman filterimplemen-
+     tation for the robot operating system. InIntelligentAutonomous Systems
+     13, pages 335348. Springer, 2016.
+[12] Pal Robotics, Tiago, http://pal-robotics.com/robots/tiago/. Accessed On:
+     February 5, 2020.
+[13] Robotnik Robotics, RB-1, https://www.robotnik.eu/manipulators/
+     rb-one/. Accessed On: February 5, 2020.
+[14] I. Nourbakhsh, R. Powers, and S. Birchfield, DERVISH An Office-
+     Navigating Robot, AIMag, vol. 16, no. 2, p. 53, Jun. 1995.
+[15] S. Thrun, M. Bennewitz, W. Burgard, A. B. Cremers, F. Dellaert, D. Fox,
+     D. Hhnel, C. Rosenberg, N. Roy, J. Schulte, and D. Schulz, ”Minerva: A
+     second-generation museum tour-guide robot, in In Proceedings of IEEE
+     International Conference on Robotics and Automation (ICRA99), 1999.
+[16] R. Simmons and S. Koenig. ”Probabilistic robot navigation in partially
+     observable environments”. In Proceedings of the 14th international joint
+     conference on Artificial intelligence - Volume 2 (IJCAI95). 1995. San
+     Francisco, CA, USA, pp. 10801087.
+[17] Astrom, K.J. ”Optimal control of Markov processes with incomplete
+     state information”. Journal of Mathematical Analysis and Applications.
+     1965. 10: pp. 174205.
+

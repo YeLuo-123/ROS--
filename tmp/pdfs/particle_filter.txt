@@ -1,0 +1,483 @@
+                                                      Computer Aided Geometric Design 25 (2008) 784–791
+
+
+
+                                                         Contents lists available at ScienceDirect
+
+
+                                             Computer Aided Geometric Design
+
+                                                               www.elsevier.com/locate/cagd
+
+
+
+
+Geometry and kinematics of the Mecanum wheel
+A. Gfrerrer
+Graz University of Technology, Institute of Geometry, Kopernikusgasse 24, 8010 Graz, Austria
+
+
+
+a r t i c l e         i n f o                            a b s t r a c t
+
+Article history:                                         Mecanum wheels are used when omnidirectional movability of a vehicle is desired. That
+Available online 4 September 2008                        means that the vehicle can move along a prescribed path and at the same time rotate
+                                                         arbitrarily around its center. A Mecanum wheel consists of a set of rolls arranged around
+Keywords:
+                                                         the wheel axis. In this paper we describe in detail the geometry of these rolls. We derive
+Mecanum wheel
+Forward kinematics
+                                                         simple canonical parameterizations of the roll generating curve and the roll surface itself.
+Inverse kinematics                                       These parametric representations reveal the geometry of the roll. With their help we can
+                                                         easily ﬁnd an approximation of the roll surface by a torus for manufacture purposes. Based
+                                                         on the roll parametrization we study the kinematics of a vehicle featured with Mecanum
+                                                         wheels.
+                                                                                                            © 2008 Elsevier B.V. All rights reserved.
+
+
+
+
+1. Introduction
+
+    The Mecanum wheel (Fig. 1, left) was invented by the Swedish engineer Bengt Ilon in 1973.1 It consists of a set of k
+congruent rolls placed symmetrically around the wheel body. The face of each roll is part of a surface of revolution R
+whose axis b is skew to the wheel axis a. Usually an angle δ between a and b of ±45◦ is chosen. Fig. 1, right, shows (the
+setup of) a mobile robot furnished with three wheels of that kind. Each of them is driven by a separate motor which gives
+the vehicle the three degrees of freedom necessary for an omnidirectional movement on level ground. The advantage of this
+architecture is that none of the wheels needs to be steerable. The wheel rolls rotate passively around their axes.
+    The parametrization in Dickerson and Lapin (1991) of the roll generating curve is rather involved and does not reveal the
+geometry of the roll. With the help of Descriptive Geometry we derive a pretty natural parametrization of this curve which
+also yields simple parametric representations of the roll surface and its meridian (Section 2). In Section 3 we use these
+parametrizations to replace the roll by an approximating torus surface. Moreover, we derive the exact velocity equation for
+a kinematic system with a Mecanum wheel (Section 4, Eq. (15)). With “exact” we mean that the position of the contact
+point C of the roll and the terrain is also taken into account. In the literature on the kinematics of Mecanum wheels it
+is (as a simpliﬁcation) always assumed that C at any moment lies exactly beneath the wheel center (cf. for example with
+Viboonchaicheep et al. (2003) or Siegwart and Nourbakhsh (2004, page 59)). Using this simpliﬁcation we ﬁnally study the
+case of a vehicle supplied with three Mecanum wheels (Section 4.1) and give a nice geometric characterization for the
+solvability of the forward kinematics of a such a robot.
+
+2. Roll geometry of the Mecanum wheel
+
+   The roll axes of a Mecanum wheel establish a set of k equidistant generators belonging to a regulus on a one-sheet
+hyperboloid H of revolution with axis a. If the wheel moves on a plane terrain π its axis a remaining parallel to π then at
+
+
+     E-mail address: gfrerrer@tugraz.at.
+ 1
+     See the US patent 3,876,255 (Ilon, 1975).
+
+0167-8396/$ – see front matter     © 2008 Elsevier B.V. All rights reserved.
+doi:10.1016/j.cagd.2008.07.008
+                                              A. Gfrerrer / Computer Aided Geometric Design 25 (2008) 784–791               785
+
+
+
+
+                                          Fig. 1. Left: Mecanum wheel. Right: Vehicle with 3 Mecanum wheels.
+
+
+
+
+                                                          Fig. 2. Curve c R generating the rolls.
+
+
+each moment at least one roll touches the ground. Hereby a passive (non-driven) rotation around the roll axis b is induced
+to the respective roll by the motion. Of course, it is desired to avoid vibration or jiggling of the vehicle throughout the
+motion, which means that the wheel axis a must keep a constant distance to the plane π :
+
+        dist(π , a) = r = const.                                                                                             (1)
+
+    Hence, the question is how to construct the roll surface R so that condition (1) is fulﬁlled. Fig. 2, left, shows the
+situation in ground view (ﬁrst projection) and corresponding front view (second projection)2 both, the wheel axis a and the
+roll axis b, being parallel to the ﬁrst projection plane. The rays for the second projection are parallel to a, i.e., the second
+image a of a is a point.
+    Geometrically condition (1) means that the curve c R that generates the roll surface R has to be a part of the cylinder
+Z of revolution with axis a and radius r. This curve is the locus of contact points of R with the plane π . The roll R and
+the cylinder Z are tangent to each other along c R .
+
+
+ 2
+     We mark the ﬁrst (second) image of an object by one (two) prime(s).
+786                                              A. Gfrerrer / Computer Aided Geometric Design 25 (2008) 784–791
+
+
+                   is the second image of a point C ∈ c
+      If C  ∈ c R                                                                                 
+                                                          R we can easily construct its ﬁrst image C :
+
+                                                                                 is the second silhouette of R n is the
+  • Let n denote the surface normal of R running through C . Since the circle c R
+                      containing C  .
+       diameter of c R
+  • Because n is a surface normal in a contour point w.r.t. the second projection it lies parallel to the plane of this projection
+    and hence its ﬁrst projection n is a horizontal line.
+  • As R is a surface of revolution n has to intersect b in a point N. In this way, the ﬁrst image n of n and with it the ﬁrst
+    image C  of C is ﬁxed.
+
+   The above construction also yields a simple parametrization of c R . Let p denote the common perpendicular of a and
+b and let A be the intersection point of p and a, i.e., the wheel center. We denote the distance and angle of a and b by
+d and δ and introduce a coordinate system S := { A ; ex , e y , ez } whose ﬁrst and third unit vector ex and ez is on a and p,
+respectively. As parameter we use the angle u between p and n. With the help of Fig. 2 we derive
+
+                 ⎛ x(u ) ⎞        ⎛ d cot δ tan u ⎞
+
+         x( u ) = ⎝ y ( u ) ⎠ = ⎝      r sin u    ⎠                                                                                 (2)
+                    z (u )            −r cos u
+
+as parametrization of c R . Since the two axes a and b are skew cot δ = ∞ is guaranteed.
+   Eq. (2) tells us that c R in general is a rational 4th order space curve. This follows for instance by re-parameterizing c R
+via τ = tan u2 .
+   Only in case of b ⊥ a (δ = ± π2 ) c R is an ordinary circle with radius r. Wheels of that type are often called “Swedish
+wheels” in the literature.
+   Fig. 2, right, gives an impression of the curve c R which consists of two branches. It has the axis a of the cylinder Z and
+the common perpendicular p of a and b as symmetry axes. Thus, the common perpendicular q of a and p is also a symmetry
+axis of c R . The curve intersects p in the points P (0, 0, −r ), P (0, 0, r ) and if δ = ± π2 it has the generators g 1,2 . . . z = 0,
+                                                                                                                   √   √
+y = ±r of Z as asymptotes. The axis b and c R meet in the common points K 1,2 (± r 2 − d2 cot δ, ± r 2 − d2 , −d) of b
+and Z .
+    Since the curve c R consists of two parts in case of δ = ± π2 , the same is true for the roll surface R. Fig. 3 shows the part
+of R generated by the branch of c R running through P . The roll R is a surface of revolution with axis b and a symmetry
+plane σ through p and orthogonal to b. The common point B of b and p is the symmetry center of R. The circle e P ⊂ σ
+through P and centered in B is an equator on R, that means it has locally maximal radius, namely r − d. The two points
+K 1,2 are conical knots on R.
+
+
+Remark. The surface normals n used in the construction above intersect the lines a, b and the line at inﬁnity of the yz-
+plane. Hence, if δ = ± π2 they establish a generator set on a hyperbolic paraboloid P . As one can easily check P has the
+equation
+
+
+         xz + d cot δ y = 0.
+
+The y-axis of the coordinate system is the axis of P and A is its vertex. The second generator set on P consists of lines
+parallel to the xy-plane. Thus, P intersects the plane at inﬁnity in the two lines at inﬁnity of the xy- and yz-plane. The
+curve c R is the intersection curve of P and the cylinder Z . From this fact, we can see again (in a purely geometric way)
+that c R is a rational fourth order curve with the asymptotes described above. The singular point of c R is the point X ∞
+at inﬁnity of the x-axis since this point is the vertex of the cylinder R and at the same time lies on the paraboloid P .
+The tangent plane τ of P in X ∞ is the xy-plane and intersects the cylinder in the two tangents g 1,2 of c R in its singular
+point X ∞ .
+   As a surface of revolution generated by a rational curve c R R itself is also rational. If δ = ± π2 the algebraic order of
+R is 8, i.e., twice the order of its generating curve c R . In the special case of δ = ± π2 the roll surface R is a torus whose
+meridian circle c R intersects its axis b in K 1,2 .
+   Of course, for the physical roll of the Mecanum wheel only a certain part of R lying between the knots K 1,2 is taken.
+   To obtain a suitable representation of the roll surface R we use a new coordinate system S ∗ := { B ; e∗x , e∗y , e∗z } with
+origin in B, x-axis x∗ = b and the new z-axis coincident with the old one (Fig. 3). W.r.t. this system the curve c R has the
+parametrization
+
+                  ⎛          2                          ⎞
+                      d cos
+                         sin δ
+                              δ
+                                tan u + r sin δ sin u
+                  ⎜                                     ⎟
+         x∗ (u ) = ⎝ cos δ tan u (r cos u − d) ⎠ .                                                                                  (3)
+                                 d − r cos u
+                                                   A. Gfrerrer / Computer Aided Geometric Design 25 (2008) 784–791          787
+
+
+
+
+                                                                    Fig. 3. The roll surface R.
+
+
+   By rotation around the x∗ -axis with angle v we ﬁnd
+                      ⎛ x∗ (u , v ) ⎞       ⎛              2                                 ⎞
+                                                      d cos
+                                                         sin δ
+                                                              δ
+                                                                tan u + r sin δ sin u
+                                            ⎜                                                ⎟
+      y∗ (u , v ) = ⎝ y ∗ (u , v ) ⎠ = ⎝ (r cos u − d)(cos δ tan u cos v + sin v ) ⎠                                        (4)
+                         z ∗ (u , v )           (r cos u − d)(cos δ tan u sin v − cos v )
+as parametrization of R.
+   Putting y ∗ = 0 we obtain tan v = − cos δ tan u which after substitution into the third line of (4) yields together with the
+ﬁrst line a parametrization of the meridian curve mR of the roll that lies in the x∗ z∗ -plane (parameter u):
+                                       2
+                     x∗ (u ) = d cos
+                                  sin δ
+                                       δ
+                                         tan u + r sin δ sin u
+      mR . . .                                                              .                                               (5)
+                     z∗ (u ) = − cos2 δ tan2 u + 1(r cos u − d)
+    More accurately: (5) is the parametrization of one of the two branches of the meridian curve; the other branch is
+symmetric to the ﬁrst one w.r.t. the axis b = x∗ of revolution and one gets its parametrization by changing the sign in front
+of the square root.
+
+3. Approximation of the roll by a torus
+
+    As we have seen in the previous section the roll surface R of a Mecanum wheel is algebraic of order 8 generated by a
+fourth order space curve c R . The natural parametrizations (Eq. 4) of the roll surface and its meridian curve (Eq. 5) can be
+used for manufacturing the roll precisely. But since the rolls usually have a ﬂexible rubber coat it is suﬃcient to use a less
+complicated surface which approximates R suﬃciently accurate. For instance, one could approximate the meridian curve
+by a suitable conic section or a rational freeform curve. As an example, we will construct an approximating torus surface T
+for the roll R.
+
+Problem 1. Construct a torus T with axis b so that T and the roll surface R have contact of order 2 along the equator
+circle e P .
+
+    Due to the symmetry with respect to the plane σ of e P the center of the wanted torus T must be the point B. Fig. 4,
+left, shows the situation in the x∗ z∗ -plane: One of the two meridian circles of R in this plane has to osculate the roll
+meridian mR (Eq. (5)) at P . Let us denote this meridian circle by mT . Vice versa, if mR and mT have contact of order k in
+P than the same is true for the generated surfaces R and T along e P .
+    The equation of mT can be set up as
+
+      F (x∗ , z∗ ) := x∗2 + ( z∗ − rl )2 − rm
+                                            2
+                                              = 0.                                                                          (6)
+Here rl and rm denote the yet unknown radii of the center circle l and of the torus meridian circle mT .
+788                                                 A. Gfrerrer / Computer Aided Geometric Design 25 (2008) 784–791
+
+
+
+
+                                                        Fig. 4. Two ways to construct an approximating torus.
+
+
+      By substitution of (5) into (6) we obtain the function
+
+                                    cos2 δ
+                                                            2                                               2
+         f (u ) := sin2 u d                     + r sin δ       +   cos2 δ tan2 u + 1(r cos u − d) + rl             2
+                                                                                                                 − rm                                  (7)
+                                  sin δ cos u
+in u. Since both of the curves mR and mT are symmetric w.r.t. z∗ f is an even function. Hence, all derivatives of odd order
+vanish at u = 0:
+                          
+         ∂ f      ∂ 3 f 
+                  =              = · · · = 0.
+         ∂ u u =0 (∂ u )3 u =0
+This is true for arbitrary values of rl , rm .
+   Now we determine rl and rm so that the two additional conditions
+
+         f (0) = (rl − d + r )2 − rm
+                                   2
+                                     = 0,
+                 
+          ∂ 2 f       (r sin2 δ + d cos2 δ)(d − rl sin2 δ)
+               2    =2                                      =0
+         (∂ u ) u =0                   sin2 δ
+are fulﬁlled. The solution is
+                  d
+         rl =            ,                                                                                                                             (8)
+                sin2 δ
+         rm = r + d cot2 δ.                                                                                                                            (9)
+
+For these values of rl and rm all derivatives of f up to order 3 are zero at u = 0. Therefore, the roll meridian curve mR and
+the meridian circle mT of the torus have contact of order 3 in the point P . The same is true for the generated surfaces of
+revolution along their common equator e P :
+
+Theorem 1. The roll surface R and the coaxial torus T with center circle l ⊂ σ (center B, radius rl =                     d
+                                                                                                                               ) and meridian circle radius
+                                                                                                                        sin2 δ
+rm = r + d cot δ have contact of order 3 along their common equator circle e P .
+                  2
+
+
+
+      Exactly in case of Swedish wheels (δ = ± π2 ) the torus surface T and the roll surface R are identical.
+      If especially δ = ± π4 (the case that mainly occurs in praxis) the radii of the torus are
+
+         rl = 2d,            rm = r + d .
+
+    Theorem 1 says that close to their common equator e P the torus T approximates the roll surface R well. Fig. 4, left,
+shows both roll meridian mR and torus meridian circle mT . On the other hand this ﬁgure also reveals that at some
+distance from P the approximation is not satisfying. So, if a Mecanum wheel is supplied with rolls of bigger length it may
+be advantageous to use a torus T̃ for the approximation whose meridian circle mT̃ is tangent to mR at P and additionally
+contains another point Q of mR (Fig. 4, right). The point Q can be computed with the help of (5). The approximation order
+of T̃ along e P is only C 1 but at the outside regions one obtains a better approximation.
+
+4. Kinematics of the Mecanum wheel
+
+   We consider a vehicle moving on level ground and furnished with Mecanum wheels like the one in (Fig. 1, right). Let us
+analyze the situation for one of the wheels at a certain moment t (Fig. 5). Four systems are involved: the terrain Σ0 , the
+vehicle Σ1 , the wheel Σ2 and the roll Σ3 which at that moment touches the ground at a certain point C (contact point).
+Note that this point always lies beneath the axis a of the wheel Σ2 : It is the intersection point of the orthogonal projections
+                                                  A. Gfrerrer / Computer Aided Geometric Design 25 (2008) 784–791                                          789
+
+
+
+
+                                                     Fig. 5. Velocities for a vehicle with Mecanum wheels.
+
+
+of the wheel axis a and the roll axis b in Σ0 . Only in case of b being in a horizontal position C lies beneath the wheel
+center A!
+    For the analytical description we choose an arbitrary point O 1 (“vehicle center”) in Σ1 as origin of a coordinate system
+S 1 := { O 1 ; e1x , e1 y , e1z } connected with the vehicle Σ1 , the x- and y-axis being parallel to the ground. The wheel center A
+may have x- and y-coordinates ax and a y w.r.t. S 1 and α may denote the angle between e1x and the wheel axis a. Then
+             ⎛ cos α ⎞
+
+        a = ⎝ sin α ⎠
+                   0
+is the direction vector of a. The direction vector b of the roll axis depends on the rotation angle u of the wheel as follows:
+             ⎛ cos α cos δ − sin α sin δ cos u ⎞            ⎛b ⎞
+                                                                x
+        b = ⎝ sin α cos δ + cos α sin δ cos u ⎠ =: ⎝ b y ⎠ .                                                                                              (10)
+                               sin δ sin u                     bz
+W.r.t. S 1 the contact point C has the x- and y-coordinates
+
+         c x = ax − d cos α cot δ tan u
+                                              .                                                                                                           (11)
+         c y = a y − d sin α cot δ tan u
+
+    In the following considerations we can neglect the z-coordinates since the occurring velocity vectors are all parallel to
+the xy-plane.
+    Let ω be the angular velocity of the motion Σ1 /Σ0 (vehicle/ground) and v O 1 ,01 = ( v x , v y ) be the velocity vector of O 1
+for that motion at the instant t. Then the vectorial velocity of the contact point C (c x , c y ) w.r.t. the motion Σ1 /Σ0 is3
+
+                       v x − ωc y
+        vC ,01 =                     .                                                                                                                   (12)
+                       v y + ωc x
+The motion Σ2 /Σ1 (wheel/vehicle) is a simple rotation around the axis a, hence, the velocity vector of C for this motion is
+
+                         − sin α
+        vC ,12 = u̇r                                                                                                                                      (13)
+                          cos α
+
+where u̇ = du
+            dt
+               is the angular velocity of Σ2 /Σ1 .
+   The motion Σ3 /Σ2 (roll/wheel) is a rotation around b. Thus, the instantaneous vectorial velocity vC ,23 of C is perpen-
+dicular to b (Eq. (10)):
+
+                        −b y
+        vC ,23 = λ               .                                                                                                                        (14)
+                         bx
+
+
+ 3
+    One can construct the vector vC ,01 from the input v O 1 ,01 , ω as indicated in Fig. 5. Here I denotes the instantaneous pole and tan θ = ω . Compare also
+with Wunderlich (1970, page 22) or Bottema and Roth (1990, page 258).
+790                                              A. Gfrerrer / Computer Aided Geometric Design 25 (2008) 784–791
+
+
+   The velocity vector vC ,03 of C for the motion Σ3 /Σ0 (roll/ground) has to be zero since the (passive) roll moves on the
+ground without sliding. Using the additivity rule for velocities of composed motions we obtain the condition
+
+         vC ,01 + vC ,12 + vC ,23 = vC ,03 = o = (0, 0)
+
+which by substitution of (12), (13), (14) yields
+
+          r sin α u̇ + b y λ = v x − ωc y
+                                                .
+          r cos α u̇ + b x λ = − v y − ωc x
+
+By elimination of λ we get the differential equation
+
+         r (b x sin α − b y cos α )u̇ − b x ( v x − ωc y ) − b y ( v y + ωc x ) = 0                                                                    (15)
+
+ruling the connection between the vehicle motion and the wheel rotation. The terms b x , b y , c x , c y in this equation are
+functions in u according to Eqs. (10), (11) and u itself, of course, depends on time t.
+    If we study the motion globally, the situation is rather complicated. While one roll of the wheel is in contact with the
+ground the contact point C moves from the ﬁrst side of the wheel to the second. When the turn is on the next roll C jumps
+back to the ﬁrst side again. It follows that b x (u ), b y (u ), c x (u ), c y (u ) are functions with jump discontinuities corresponding
+to the changes of the rolls.4
+    This is the reason that for practical purposes5 it is assumed that the contact point C in the average lies beneath the
+wheel center A. By this simpliﬁcation we can put b x = cos(α + δ), b y = sin(α + δ), c x = ax , c y = a y in Eq. (15). Then we
+obtain
+
+                    1                                                                
+         u̇ = −              sin(α + δ)( v y + ωax ) + cos(α + δ)( v x − ωa y ) .                                                                      (16)
+                  r sin δ
+      This formula allows to compute the (approximate) wheel velocity u̇ for given vehicle velocity data v x , v y , ω .
+
+4.1. Example: Kinematics of a vehicle with three Mecanum wheels
+
+   As an example we study the case of a vehicle supplied with three Mecanum wheels with wheel centers A i (aix , aiy ) and
+wheel axis angles αi , i = 1, 2, 3. If we denote the corresponding angular velocities of the wheels by ωi then according to
+Eq. (16) we have
+         ⎛ω ⎞                          ⎛v ⎞
+              1                           x
+                                1
+         ⎝ ω2 ⎠ = −                   M⎝ vy ⎠                                                                                                          (17)
+                            r sin δ
+           ω3                            ω
+with
+             ⎛ cos(α + δ) sin(α + δ) a sin(α + δ) − a cos(α + δ) ⎞
+                    1           1       1x      1         1y       1
+         M = ⎝ cos(α2 + δ) sin(α2 + δ) a2x sin(α2 + δ) − a2 y cos(α2 + δ) ⎠ .
+                  cos(α3 + δ) sin(α3 + δ) a3x sin(α3 + δ) − a3 y cos(α3 + δ)
+
+      Eq. (17) is the solution to the inverse kinematic problem of the vehicle:
+
+
+Inverse Kinematic Problem:
+Given: Angular velocity ω of the vehicle Σ1 and vectorial velocity ( v x , v y )                   of the vehicle center O 1 ;
+Wanted: Angular velocities ωi of the wheels i = 1, 2, 3.
+
+
+      Conversely, we have the
+
+
+Forward Kinematic Problem:
+Given: Angular velocities ωi of the wheels i = 1, 2, 3;
+Wanted: Angular velocity ω of the vehicle Σ1 and vectorial velocity ( v x , v y )                     of the vehicle center O 1 .
+
+
+  4
+    Moreover, to avoid vibration the rolls are arranged around the wheel body in a way that the silhouettes of adjacent rolls are slightly overlapping. This
+means that at the change of two rolls both of them are in contact with the ground for a short time interval, one close to the ﬁrst side of the wheel and
+the other close to the second.
+  5
+    See Viboonchaicheep et al. (2003) or Siegwart and Nourbakhsh (2004, page 59).
+                                               A. Gfrerrer / Computer Aided Geometric Design 25 (2008) 784–791                                     791
+
+
+   Clearly, a unique solution for the forward kinematic problem exists if and only if det M = 0, namely
+       ⎛v ⎞                       ⎛ω ⎞
+            x                          1
+       ⎝ v y ⎠ = −r sin δ M    −1 ⎝
+                                      ω2 ⎠ .                                                                                                      (18)
+          ω                           ω3
+Our simpliﬁcation from above means that the axis b i of the roll that is in contact with the ground is assumed to be
+horizontal, roll center B i and contact point C i lying exactly beneath the wheel center A i (aix , aiy ). In this position (the ﬁrst
+projection of) b i has the equation
+
+       − sin(αi + δ)(x − aix ) + cos(αi + δ)( y − aiy ) = 0.
+In other words, the line coordinates of b i are
+                                                                    
+        − sin(αi + δ), cos(αi + δ), aix sin(αi + δ) − aiy cos(αi + δ) .
+If one multiplies the second column of M with −1 and additionally exchanges this column with the ﬁrst one then the i-th
+row of the modiﬁed matrix is identical with that vector. Hence, det M = 0 is equivalent to the condition that the three roll
+axes meet in a common point I which can also be at inﬁnity. As a result we have
+
+Theorem 2. The direct kinematics of a robot with three Mecanum wheels has a unique solution if and only if the wheels are arranged
+so that the roll axes are not concurrent or parallel.
+
+    In a bad wheel arrangement with the roll axes running through a common point I the possible self motion of the vehicle
+is the rotation around I . In this case the three contact rolls rotate around their axes even if the wheel motors stand still.
+Such an unwanted self motion might be induced by slightly inclined terrain. Of course, this effect also shows up in case of
+vehicles with more than three Mecanum wheels.
+
+5. Conclusions
+
+   In the paper I give some detailed geometric analysis of Mecanum wheels and work out natural parametrizations of
+the roll surface (Eq. (4)) and its meridian curve (Eq. (5)). The result can be used for manufacturing the rolls precisely.
+Alternatively I investigate suitable approximations of the roll surface by torus patches (Section 3).
+   Moreover I show that the instantaneous contact point C of a roll moves from one side of the Mecanum wheel to the
+opposite as the wheel rotates. This is neglected in the standard literature which might be a reason for deviations between
+the real and the predicted motion of a vehicle on such wheels. I develop the differential equation ruling the connection
+between the vehicle velocity and the angular velocity of the wheel (Eq. (15)). This could be the starting point for some
+more accurate analysis of the kinematics of Mecanum wheel vehicles in future research work. As a drawback the formula
+requires the knowledge of the rotation angle function u = u (t ) of the wheel which may not be available in practice.
+   Finally, by returning to the simpliﬁed equation between the vehicle and wheel velocities, I deliver some nice geometric
+characterization of singular wheel constellations (Theorem 2).
+
+Acknowledgements
+
+   I cordially thank Mathias Brandstötter from the RoboCup Team at TU Graz for fruitful discussions and for providing the
+ProEngineer-ﬁles of the Mecanum wheel vehicle Krikkitγ developed by the team. From this CAD model I generated the
+images in Fig. 1.
+   I also thank the reviewers for their help to improve the paper.
+
+References
+
+Bottema, O., Roth, B., 1990. Theoretical Kinematics. Dover Publications.
+Dickerson, S., Lapin, B.D., 1991. Control of an omni-directional robot vehicle with Mecanum wheels. In: National Telesystems Conference I, pp. 323–328.
+Ilon, B.E., 1975. Wheels for a course stable selfpropelling vehicle movable in any desired direction on the ground or some other base. US Patents and
+    Trademarks Oﬃce, Patent 3,876,255.
+Siegwart, R., Nourbakhsh, I.R., 2004. Introduction to Autonomous Mobile Robots. MIT Press, Cambridge.
+Viboonchaicheep, P., Shimada, A., Kosaka, Y., 2003. Position rectiﬁcation control for Mecanum wheeled omni-directional vehicles. In: Proc. of the 29th
+    Annual Conference of the IEEE, pp. 854–859.
+Wunderlich, W., 1970. Ebene Kinematik. Bibliographisches Institut Mannheim.
+
